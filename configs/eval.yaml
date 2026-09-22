@@ -1,0 +1,14 @@
+# Screening-benchmark profile: CoIR AppsRetrieval (English prose queries, Python
+# solution documents). Structural indexing is skipped entirely, not merely
+# weighted to zero -- APPS documents have no cross-file structure to index
+# (PRD.md 2.2). Sparse is deliberately down-weighted: BM25 scores 4.8 on this
+# task against BGE's 14.7, so equal-weight fusion is a net negative.
+profile: eval
+dense_enabled: true
+sparse_enabled: true
+structural_enabled: false
+agent_enabled: false
+reranker_enabled: true
+evolutionary_enabled: false
+eval_dense_weight: 0.85
+eval_sparse_weight: 0.15   # PLACEHOLDER, OQ-02, swept by T-112

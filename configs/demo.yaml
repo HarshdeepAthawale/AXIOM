@@ -1,0 +1,11 @@
+# Live-demo profile: the ~10k-file JavaScript corpus from the problem statement.
+# All three signals at the locked per-QueryType weights. This is the profile the
+# jury sees (PRD.md 2.2) and the only one where the structural signal earns its keep.
+profile: demo
+dense_enabled: true
+sparse_enabled: true
+structural_enabled: true
+agent_enabled: true
+reranker_enabled: true
+evolutionary_enabled: true
+top_k_default: 10
