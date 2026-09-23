@@ -295,18 +295,52 @@ class DenseRetriever:
         ]
 
     def _probe(self, vector: np.ndarray, width: int) -> list[tuple[str, float]]:
-        """Run the backend's top-``width`` inner-product search."""
+        """Return a deterministic top-``width`` by inner product.
+
+        The tie-break has to be part of *selecting* the set, not a sort applied
+        afterwards. Both backends pick their ``width`` rows by a rule of their
+        own -- FAISS by internal row order, numpy by ``argpartition``'s unstable
+        introselect -- so when the score at the cut-off is shared by more rows
+        than fit, each backend keeps a different, arbitrary subset. Sorting that
+        subset by ``(-score, chunk_id)`` afterwards yields a correctly ordered
+        list of the wrong members, which is worse than an obvious failure: it
+        looks deterministic, and is, within one build.
+
+        So both paths over-fetch until the tie group straddling the boundary is
+        fully in hand, then apply the documented total order and cut. Identical
+        output across backends and rebuilds (NFR-08, Rules.md Rule 4).
+
+        It matters most on the degraded path: with the hash embedder, exact
+        float32 ties are pervasive, and that is precisely the configuration a
+        locked-down evaluator runs.
+        """
         query = np.ascontiguousarray(vector, dtype=np.float32).reshape(1, -1)
+
         if self._index is not None:
-            scores, labels = self._index.search(query, width)
+            total = len(self._chunk_ids)
+            fetch = min(total, max(width, 1))
             pairs: list[tuple[str, float]] = []
-            for label, score in zip(labels[0], scores[0], strict=True):
-                row = int(label)
-                # FAISS pads with -1 when an IVF probe finds fewer than `width`.
-                if row < 0 or row >= len(self._chunk_ids) or not np.isfinite(score):
-                    continue
-                pairs.append((self._chunk_ids[row], float(score)))
-            return pairs
+            while True:
+                scores, labels = self._index.search(query, fetch)
+                pairs = []
+                for label, score in zip(labels[0], scores[0], strict=True):
+                    row = int(label)
+                    # FAISS pads with -1 when an IVF probe finds fewer than `fetch`.
+                    if row < 0 or row >= total or not np.isfinite(score):
+                        continue
+                    pairs.append((self._chunk_ids[row], float(score)))
+                # Stop once the boundary score is strictly better than the last
+                # one fetched: every row that could displace a keeper is present.
+                # `< width` (not `<=`): at exactly `width` results the
+                # boundary row IS the last fetched row, so `<=` would stop
+                # before over-fetching and reinstate the truncation this whole
+                # method exists to avoid.
+                exhausted = fetch >= total or len(pairs) < width
+                boundary_settled = len(pairs) >= width and pairs[width - 1][1] > pairs[-1][1]
+                if exhausted or boundary_settled:
+                    break
+                fetch = min(total, fetch * 2)
+            return self._deterministic_top(pairs, width)
 
         matrix = self._matrix
         if matrix is None or matrix.size == 0:
@@ -315,8 +349,20 @@ class DenseRetriever:
         if width >= sims.shape[0]:
             rows = np.arange(sims.shape[0])
         else:
+            # argpartition is unstable, so widen the cut to the whole tie group
+            # sitting on the boundary before the total order is applied.
             rows = np.argpartition(-sims, width - 1)[:width]
-        return [(self._chunk_ids[int(row)], float(sims[int(row)])) for row in rows]
+            boundary = sims[rows].min()
+            rows = np.flatnonzero(sims >= boundary)
+        return self._deterministic_top(
+            [(self._chunk_ids[int(row)], float(sims[int(row)])) for row in rows], width
+        )
+
+    @staticmethod
+    def _deterministic_top(pairs: list[tuple[str, float]], width: int) -> list[tuple[str, float]]:
+        """Apply the documented total order -- score desc, then chunk_id asc -- and cut."""
+        pairs.sort(key=lambda item: (-item[1], item[0]))
+        return pairs[:width]
 
 
 def search(

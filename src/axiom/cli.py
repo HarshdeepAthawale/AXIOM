@@ -724,7 +724,8 @@ def _resolve_build_identity(
 def main(
     ctx: typer.Context,
     profile: Annotated[
-        str | None, typer.Option("--profile", help="Config profile: default, fast, accurate, eval.")
+        str | None,
+        typer.Option("--profile", help="Config profile: default, demo, fast, accurate, eval."),
     ] = None,
     version: Annotated[
         str | None, typer.Option("--version", help="Index version id to operate on.")

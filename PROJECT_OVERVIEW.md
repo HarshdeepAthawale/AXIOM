@@ -448,11 +448,18 @@ in the pipeline. The only lever that moves this number is a stronger first-stage
 `Qwen3-Embedding-0.6B` primary, which is 27x larger and has not yet been exported to ONNX and run.
 The architecture is sound and measured; the model underneath it is the fallback.
 
-For scale, published CoIR figures put BM25 at 4.8 and BGE-M3 (568M params) at 7.37 on this task.
-A 22M-parameter model reaching 7.59 dense-only — no sparse leg, no reranker, no agent loop — is
-therefore roughly at the level of a model **25x its size**. That is the honest framing of this
-number, and it is also why the previously-quoted "BGE 0.6B = 14.7" baseline was retracted: an
-adversarial audit could not locate it in either cited paper.
+We are deliberately **not** placing this number against published figures for other models. A
+draft of this section compared 7.59 to "BM25 at 4.8 and BGE-M3 at 7.37" and concluded we were
+"at the level of a model 25x our size". That comparison is withdrawn: those two figures carry
+exactly the same provenance as the retracted "BGE 0.6B = 14.7" — nobody on this team has opened the
+paper and read the table. Quarantine applies to *favourable* uncited numbers as strictly as to
+unfavourable ones, and a flattering comparison is the one most likely to reach a slide unchallenged.
+
+The comparison that *is* ours to make is internal, and it is in the table above: sparse-only 0.91,
+dense-only 7.59, hybrid 7.78 — three arms we ran ourselves, on the full split, one scoring each.
+If an external row is wanted for the deck, the rule is
+[PRD §2.0.3](docs/PRD.md#203-external-comparison-table--quarantined-pending-per-row-citation):
+one paper, one table, one page, read by a human, cited per row.
 
 **The binding constraint is `Recall@100 = 27.22`, not NDCG.** Reranking and agentic refinement can
 only reorder what the first stage already retrieved, so with roughly three-quarters of the relevant

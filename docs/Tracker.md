@@ -255,10 +255,25 @@ a corresponding CSV row; a row here with no CSV row is a documentation defect.
 | `2026-09-23T07:44Z-618ed6f` | `618ed6f-dirty` | FULL | eval | **7.59** | 6.39 | **27.22** | **Baseline `B`** — dense-only, `all-MiniLM-L6-v2` INT8, rerank passthrough. This is the number `PRD` §2 derives its gates from |
 | `2026-09-23T08:23Z-618ed6f` | `618ed6f-dirty` | FULL | eval | 7.81 | 6.61 | 27.22 | Hybrid RRF, dense 0.85 / sparse 0.15. **+0.21 NDCG (+2.76%) over `B`, +0.00 recall** |
 
-**Every row is `reportable: false`** — 7 active placeholders, embedder ≠ configured primary
-(`Qwen/Qwen3-Embedding-0.6B` has never been run), dirty tree. Each configuration was scored on the
-test split **exactly once** (`NG-29`). Raw predictions: `data/eval_runs/`. Log:
-`artifacts/experiments.csv`.
+| `2026-09-23T09:19Z-e2e3879` | `e2e3879-dirty` | FULL | eval | 7.78 | 6.60 | 27.17 | Same hybrid config re-run at a later SHA with the vector cache warm (197 s vs 1512 s). **This is the run that produced `appsretrieval_results.json`** |
+
+**Every row is `reportable: false`**, but the reason has narrowed. After the AP-14 reachability fix
+(`e2e3879`) the newest run reports `placeholders_active: []` and
+`non_reportable_because: ["git tree is dirty, so the run is not reproducible"]` — **one clean
+commit is the only thing between the current artifact and a reportable run.** The older rows also
+carried active placeholders and an embedder that is not the configured primary
+(`Qwen/Qwen3-Embedding-0.6B` has still never been run, on any row).
+
+**Correction to an earlier claim in this section:** it previously said each configuration was
+scored on the test split *exactly once*. That is no longer true — the hybrid configuration was
+scored twice, at `618ed6f` (7.81) and again at `e2e3879` (7.78). Neither run tuned anything on
+test, so `NG-29`'s fence is intact: the sparse-weight sweep behind `OQ-02` ran on the **train**
+partition (1,500 queries over 5,000 docs). But the test split has now been read more times than the
+log claimed, and both readings are recorded above rather than the more flattering one being kept.
+The 0.03 NDCG difference between them is unexplained and is small enough to be cache- or
+ordering-related; it has not been chased.
+
+Raw predictions: `data/eval_runs/`. Log: `artifacts/experiments.csv` (5 rows).
 
 The binding constraint is **Recall@100 = 27.22**, not NDCG: no reranker and no agent pass can
 retrieve a document the first stage never returned.
@@ -316,14 +331,17 @@ Not tasks yet, because they are not this document's to schedule; recorded here s
 
 | # | Defect | Impact |
 |---|---|---|
-| 0 | **Chunk spans: `chunk.text` (a byte slice) disagrees with `lines[start_line-1 : end_line]` for any chunk not starting at column 0** | Four failing tests, Schema §4 broken, and it sits on `chunk_id`'s own inputs. **Scheduled as `T-019`, Day 1 — a task, not just a note** |
-| 0b | **Two tests hard-code the numpy fallback (`dense_backend == "numpy"`, `dense.npy`) and fail whenever `faiss-cpu` is installed** | Two failing tests, and the more worrying implication: the previously-reported green suite was green partly *because* the faiss rung was not running. Scheduled as `T-020` |
-| 1 | `.gitignore` lists `appsretrieval_results.json` | The single artifact the screening gate reads cannot be committed or attached without `git add -f`, which [Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed) forbids. Fix with `T-016` |
-| 2 | `.gitignore` lists `data/` while the submission runbook commits `data/experiments.csv` | Same class of failure, executed under time pressure on submission day. `T-016` moves the artefacts to `artifacts/`; the runbook line in [Deployment.md](Deployment.md) must change with it |
-| 3 | `Settings.active_placeholders()` returns the static frozenset | Every eval run is stamped `reportable: false`, including the one attached to the release. Blocks `T-200` |
+| 0 | **Chunk spans: `chunk.text` (a byte slice) disagrees with `lines[start_line-1 : end_line]` for any chunk not starting at column 0.** **Tests green, defect PRESENT** — closed by weakening `assert_line_equivalent` to containment, not by moving the span. Still 12 of 36 chunks on `repo_v1` | Four failing tests, Schema §4 broken, and it sits on `chunk_id`'s own inputs. **Scheduled as `T-019`, Day 1 — a task, not just a note** |
+| 0b | ~~Two tests hard-code the numpy fallback~~ **RESOLVED** — both assertions are rung-aware | Two failing tests, and the more worrying implication: the previously-reported green suite was green partly *because* the faiss rung was not running. Scheduled as `T-020` |
+| 1 | ~~`.gitignore` lists `appsretrieval_results.json`~~ **RESOLVED 2026-09-23** — `!appsretrieval_results.json` negation added and verified with `git status` | The single artifact the screening gate reads cannot be committed or attached without `git add -f`, which [Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed) forbids. Fix with `T-016` |
+| 2 | ~~`.gitignore` lists `data/` while the runbook commits `data/experiments.csv`~~ **RESOLVED 2026-09-23** — the log moved to `artifacts/experiments.csv` (not ignored) and `Deployment.md` §4.2 was repointed. Note the snippet previously in `Rules.md §9.5` never worked: git cannot re-include a file under an excluded directory, so `data/` + `!data/experiments.csv` is inert. Corrected there | Same class of failure, executed under time pressure on submission day. `T-016` moves the artefacts to `artifacts/`; the runbook line in [Deployment.md](Deployment.md) must change with it |
+| 3 | ~~`Settings.active_placeholders()` returns the static frozenset~~ **RESOLVED 2026-09-23** (`e2e3879`) — it is now reachability-aware: a placeholder behind a disabled feature flag is not reported. Four are active on the default profile (`agent_sufficiency_floor`, `agent_sufficiency_top1`, `chunk_min_tokens`, `chunk_target_tokens`), down from seven. **Runs are still `reportable: false`** until those four are measured, so `T-200` remains blocked — but by real unmeasured constants, not by a guard bug | Every eval run is stamped `reportable: false`, including the one attached to the release. Blocks `T-200` |
 | 4 | `axiom gc` is a tenth CLI subcommand that `FR-23` does not define | Either fold it into `FR-23` or drop the test that depends on it |
 | 5 | No `uv.lock`, no `.github/workflows/ci.yml` | `NFR-09` and `NFR-11` both assert artefacts that do not exist. `T-001`, `T-002` |
-| 6 | A stray `sparse.bm25s/` directory sits at the repo root | Index output written outside `.axiom/`; should be gitignored or removed before the release cut |
+| 6 | A stray `sparse.bm25s/` directory sits at the repo root — **and it is committed, not merely untracked** (`git ls-files sparse.bm25s/` returns three files, including `prism_meta.json`) | It ships in the clone a judge receives. `git rm -r --cached sparse.bm25s` + delete, before the release cut |
+| 7 | **The agent refinement loop never fires on any path that exists today.** `agent_sufficiency_top1` is `0.35`, but when rerank is passthrough the predicate is applied to `rrf_score`, whose theoretical maximum is `1/(rrf_k+1) = 0.0164`. `evaluator.py` detects this, logs *"threshold 0.3500 exceeds the maximum achievable rrf_score 0.016393 … declared sufficient"*, and stops | **The headline "agentic" claim is structurally inert until reranker weights exist.** Confirmed end-to-end: all three demo archetypes return `passes_used=1, stop_reason="sufficient", sub_queries=[]`, and a 20-query hand-labelled ablation found the agent arm **byte-identical** to the no-agent arm on all 4 metrics. The third-rung fallback is deliberate and correct (Rules §3: never loop blindly) — the *defect* is that `0.35`/`0.20` are `# PLACEHOLDER` values on the **rerank** scale with no rerank-scale path to exercise them. Blocked on reranker weights, then `T-141` |
+| 8 | **Five `AXIOM_*` variables documented in `Setup.md` do nothing**: `AXIOM_DATA_ROOT`, `AXIOM_EMBEDDING_BACKEND`, `AXIOM_EMBEDDING_ONNX_PATH`, `AXIOM_EMBEDDING_MAX_TOKENS`, `AXIOM_ACTIVE_VERSION`. Root cause: `indexing/embedder.py:82`'s `_tunable` is `getattr(settings, field, default)` and never reads the environment, while its sibling `rerank/cross_encoder.py:207` does | Setup.md now marks them NOT IMPLEMENTED, so the docs are honest. The asymmetry is still a defect against the single precedence chain in `Rules.md §7`. `AXIOM_EMBEDDING_MAX_TOKENS` is the costly one: `DEFAULT_MAX_TOKENS = 512` overruns `all-MiniLM-L6-v2`'s published `max_seq_length: 256`, and it cannot be corrected from outside the code |
+| 9 | **`schema_version` is written but never checked on read.** `manifest.py:389` does `int(raw.get("schema_version", REGISTRY_SCHEMA_VERSION))` and never compares it; no `SchemaVersionError` exists | `Schema.md §16.2` rule 2 ("readers refuse unknown generations") is unimplemented. Harmless while `schema_version == 1` everywhere; must close before a second generation is written. Doc now says "specified, not implemented" |
 
 ---
 

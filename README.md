@@ -99,6 +99,7 @@ New to the project? Follow this path.
 |---|---|---|
 | [Setup.md](docs/Setup.md) | Prerequisites, install paths, env vars, verification ladder, troubleshooting | Parth |
 | [Deployment.md](docs/Deployment.md) | Docker, submission runbook, rollback, demo-day runbook | Parth |
+| [Submission.md](docs/Submission.md) | PPT outline, demo-video script, demo-day runbook, the results table as it goes on the slide | Harshdeep |
 
 ### Quality and safety
 
@@ -197,20 +198,26 @@ for the tracking entry.
 
 ## Reference targets
 
-Every accuracy number below is deliberately blank until the first eval run produces it. The suite
-previously carried a `BGE 0.6B = 14.7` baseline that appears in neither of the papers it was cited
-to; it has been removed rather than re-sourced, and the headline claim is being rebuilt as a
-**relative gain over our own measured dense-only baseline**, with an ablation table
-(dense-only → +sparse → +rerank → +agent) next to it. See
+The suite previously carried a `BGE 0.6B = 14.7` baseline that appears in neither of the papers it
+was cited to; it has been removed rather than re-sourced. The headline claim is a **relative gain
+over our own measured dense-only baseline `B`**, with an ablation table next to it. See
 [_CONTRACT.md §8](docs/_CONTRACT.md#8-targets).
 
-| Metric | Baseline | Our target |
-|---|---|---|
-| NDCG@10 (CoIR AppsRetrieval test) | our dense-only run — `# PLACEHOLDER`, owned by `T-200` | re-derived from it; reported as a relative gain |
-| MRR | same run | re-derived |
-| Recall@100 (first stage) | same run | re-derived |
+**`B` now exists.** Measured 2026-09-23 on the full CoIR `AppsRetrieval` test split (8,765 docs,
+3,765 queries, no truncation), `all-MiniLM-L6-v2` INT8, rerank passthrough:
+
+| Metric | Baseline `B` (measured) | Our target | Status |
+|---|---|---|---|
+| NDCG@10 (CoIR AppsRetrieval test) | **7.59** | ≥ 1.36 × `B` = **10.3** | not yet measured — no reranker weights exist |
+| MRR@10 | **6.39** | ≥ 1.36 × `B_mrr` | not yet measured |
+| Recall@100 (first stage) | **27.22** | — | **the binding constraint**: 73% of relevant docs never enter the candidate pool, and nothing downstream of retrieval can reach them |
+| *(ablation)* sparse-only / hybrid RRF | 0.91 / 7.80 | — | hybrid is +0.21 NDCG (+2.76%) and **+0.00 recall** over `B` |
 | Query p50 | — | budget: ≤ 900 ms ([_CONTRACT.md §7](docs/_CONTRACT.md#7-performance-budgets-locked-8-core-cpu--16-gb-ram-reference-box)) |
 | Cold index, 10k chunks | — | budget: ≤ 12 min (same) |
 
-A budget is not a measurement. Nothing in this table may be quoted to the jury until
-[Tracker.md](docs/Tracker.md)'s eval metrics log carries the run that produced it.
+A budget is not a measurement, and the two latency rows above are still budgets — **no latency or
+memory figure in this project has ever been measured.** The accuracy rows *are* measured and are
+logged in [Tracker.md §5](docs/Tracker.md#5-eval-metrics-log) and `artifacts/experiments.csv`, but
+all three runs are stamped **`reportable: false`** (seven active placeholders, a dirty tree, and an
+embedder that is not the configured primary). Nothing here may be quoted to the jury as a final
+number until a reportable run replaces it.

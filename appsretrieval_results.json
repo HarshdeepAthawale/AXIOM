@@ -1,0 +1,181 @@
+{
+  "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
+  "task_name": "AppsRetrieval",
+  "mteb_version": "2.21.6",
+  "evaluation_time": 197.305,
+  "kg_co2_emissions": null,
+  "scores": {
+    "test": [
+      {
+        "hf_subset": "default",
+        "languages": [
+          "eng-Latn",
+          "python-Code"
+        ],
+        "main_score": 0.07780838788683211,
+        "map_at_1": 0.0448871181938911,
+        "map_at_10": 0.06598779485233662,
+        "map_at_100": 0.07108090975797951,
+        "map_at_3": 0.059451084550686165,
+        "map_at_5": 0.06299690128375386,
+        "mrr_at_1": 0.0448871181938911,
+        "mrr_at_10": 0.06598779485233662,
+        "mrr_at_100": 0.07108090975797951,
+        "mrr_at_3": 0.059451084550686165,
+        "mrr_at_5": 0.06299690128375386,
+        "ndcg_at_1": 0.0448871181938911,
+        "ndcg_at_10": 0.07780838788683211,
+        "ndcg_at_100": 0.10830183015736532,
+        "ndcg_at_3": 0.06410814596186734,
+        "ndcg_at_5": 0.07053121419635403,
+        "recall_at_1": 0.0448871181938911,
+        "recall_at_10": 0.11580345285524568,
+        "recall_at_100": 0.27171314741035857,
+        "recall_at_3": 0.07755644090305445,
+        "recall_at_5": 0.09322709163346614
+      }
+    ]
+  },
+  "axiom_provenance": {
+    "schema_version": 1,
+    "reportable": false,
+    "non_reportable_because": [
+      "git tree is dirty, so the run is not reproducible"
+    ],
+    "mode": "FULL",
+    "profile": "eval",
+    "profile_file": "/Users/anish/Desktop/prism hack/configs/eval.yaml",
+    "config_hash": "518beba56787cc686244d2da6b883fe8",
+    "placeholders_active": [],
+    "placeholders_excluded_as_unreachable": [
+      "chunk_min_tokens",
+      "chunk_target_tokens",
+      "chunk_min_target_tokens"
+    ],
+    "placeholders_all": [
+      "agent_sufficiency_floor",
+      "agent_sufficiency_top1",
+      "chunk_min_tokens",
+      "chunk_target_tokens",
+      "stability_bonus"
+    ],
+    "models": {
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "embedding_dim": 384,
+      "reranker_model": "BAAI/bge-reranker-v2-m3",
+      "reranker_enabled": true,
+      "llm_model": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "llm_enabled": true,
+      "agent_enabled": false
+    },
+    "weights": {
+      "dense": 0.85,
+      "sparse": 0.15,
+      "structural": 0.0
+    },
+    "backend": "hybrid-rrf",
+    "backend_detail": {
+      "name": "hybrid-rrf",
+      "degraded": false
+    },
+    "dataset_source": "mteb:2.21.6",
+    "limit": null,
+    "top_k": 100,
+    "coverage": {
+      "qrels_queries": 3765,
+      "queries_with_positives": 3765,
+      "answered_queries": 3765,
+      "empty_result_queries": 0,
+      "run_only_queries": 0,
+      "retrieved_documents": 376500
+    },
+    "reported_percent": {
+      "ndcg_at_10": 7.7808,
+      "mrr_at_10": 6.5988,
+      "recall_at_100": 27.1713,
+      "map_at_10": 6.5988
+    },
+    "git_sha": "e2e3879-dirty",
+    "generated_at": "2026-09-23T09:19:55.000194Z",
+    "command": "run_eval.py --task AppsRetrieval --split test --backend scripts.eval_backends:hybrid --profile eval --out appsretrieval_results.json --predictions data/sweeps/appsretrieval_predictions.json",
+    "python": "3.11.14",
+    "timings": {
+      "total_ms": 197061.857,
+      "stages": [
+        {
+          "stage": "dataset",
+          "elapsed_ms": 17275.694,
+          "documents": 8765,
+          "queries": 3765,
+          "source": "mteb:2.21.6"
+        },
+        {
+          "stage": "index",
+          "elapsed_ms": 3009.758,
+          "chunks": 8765
+        },
+        {
+          "stage": "search",
+          "elapsed_ms": 175280.009,
+          "queries": 3765,
+          "top_k": 100
+        },
+        {
+          "stage": "score",
+          "elapsed_ms": 1496.397,
+          "qrels_queries": 3765,
+          "queries_with_positives": 3765,
+          "answered_queries": 3765,
+          "empty_result_queries": 0,
+          "run_only_queries": 0,
+          "retrieved_documents": 376500
+        }
+      ]
+    },
+    "resolved_config": {
+      "profile": "eval",
+      "seed": 42,
+      "num_threads": 0,
+      "index_root": ".axiom",
+      "log_level": "INFO",
+      "offline": false,
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "embedding_dim": 384,
+      "embedding_batch_size": 64,
+      "embedding_query_instruction": "Given a natural-language question about a codebase, retrieve the code snippets that answer it",
+      "reranker_model": "BAAI/bge-reranker-v2-m3",
+      "reranker_enabled": true,
+      "reranker_timeout_ms": 2500,
+      "rerank_max_chars": 1024,
+      "llm_model": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "llm_enabled": true,
+      "llm_max_tokens": 512,
+      "rrf_k": 60,
+      "dense_top_k": 100,
+      "sparse_top_k": 100,
+      "structural_top_k": 50,
+      "fusion_top_n": 5,
+      "top_k_default": 10,
+      "faiss_ivf_threshold": 50000,
+      "dense_enabled": true,
+      "sparse_enabled": true,
+      "structural_enabled": false,
+      "chunk_min_tokens": 16,
+      "chunk_target_tokens": 512,
+      "chunk_min_target_tokens": 64,
+      "agent_enabled": false,
+      "agent_max_passes": 2,
+      "agent_wall_clock_ms": 5000,
+      "agent_sufficiency_top1": 0.35,
+      "agent_sufficiency_floor": 0.2,
+      "agent_sufficiency_min_results": 3,
+      "evolutionary_enabled": false,
+      "dedupe_cosine": 0.95,
+      "stability_bonus": 0.1,
+      "eval_sparse_weight": 0.15,
+      "eval_dense_weight": 0.85,
+      "api_port": 8000,
+      "ui_port": 8501
+    }
+  }
+}
