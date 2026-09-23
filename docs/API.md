@@ -83,7 +83,7 @@ CORS header is the difference between "a local dev server" and "any page the use
 their source index".
 
 When it is on: `allow_methods` is `GET, POST, OPTIONS` and `allow_headers` is `content-type` — the
-methods and header the four endpoints actually use, not `*`. `allow_credentials` is always `false`,
+methods and header the five endpoints actually use, not `*`. `allow_credentials` is always `false`,
 in both the explicit-origin and `*` modes; there is no cookie or session on this surface for a
 browser to attach. A `*` value is honoured for a demo whose frontend port is not stable, and logs a
 `WARNING` when it is used.
@@ -92,7 +92,7 @@ browser to attach. A `*` value is honoured for a demo whose frontend port is not
 
 ## 3. Endpoints
 
-Four endpoints implement `FR-24`. All four are typed by Pydantic models: the payload models are the
+Five endpoints implement `FR-24`. All four are typed by Pydantic models: the payload models are the
 shared [Schema.md](Schema.md) contract (`RetrievalResult`, `QueryPlan`, `Chunk`, `VersionManifest`
 summaries); the request/response *envelopes* around them (e.g. the object that wraps `results` and
 `query_plan` together with `elapsed_ms`) are API-specific models in `src/axiom/api/models.py`, not
@@ -127,7 +127,7 @@ Example:
 
 **Response body — `200 OK`**
 
-Eleven fields, all of them always present. `api/models.py`'s `QueryResponse` is `extra="forbid"`, so
+Twelve fields, all of them always present. `api/models.py`'s `QueryResponse` is `extra="forbid"`, so
 this table is exhaustive in both directions: nothing else appears, and none of these is optional.
 
 The first six are the core contract:
@@ -141,7 +141,7 @@ The first six are the core contract:
 | `timings` | `dict[str, float]` | per-stage elapsed ms, keyed by the closed stage vocabulary in [Rules.md §9.1](Rules.md#91-logging-discipline) — on the query path: `plan`, `agent.fan_out`, `fuse`, `hydrate`, `rerank`, `format`, and `evolutionary` when enabled. A stage that runs twice (the loop's second pass) is **summed** into one key. Satisfies `NFR-10` |
 | `warnings` | `list[object]` | degradations that did not fail the request; see §5. Each item is `{"code": str, "detail": str}`. Empty list on a clean run |
 
-The remaining five are the HTTP-only bookkeeping §3 permits an envelope to carry. Each earns its
+The remaining six are the HTTP-only bookkeeping §3 permits an envelope to carry. Each earns its
 place in the UI and in `--json` diffs, and a client that ignores them still parses correctly:
 
 | Field | Type | Description |
@@ -151,6 +151,15 @@ place in the UI and in `--json` diffs, and a client that ignores them still pars
 | `score_field` | `str` | **which field `RetrievalResult.score` carries**: `"rerank_score"` when the cross-encoder ran, `"rrf_score"` on the passthrough rung. The two differ by roughly two orders of magnitude (RRF sits near `1/(60+rank)`), so a client that renders `score` without reading this is how a demo accidentally overclaims |
 | `version_ids` | `list[str]` | the index versions actually searched, after `all_versions` resolution |
 | `degradations` | `list[str]` | every ladder rung taken during this query, in order |
+| `families` | `list[object]` | cross-version groups, one per result, in result order — **empty unless the request set `all_versions`**. Present either way: a key that appears only on one code path forces every client to branch on its absence. Each item is `{"family_id": str, "representative": str, "versions": list[str], "members": [{"chunk_id", "version_id", "location", "score"}]}`. `representative` is the `chunk_id` of the member that survived into `results`; `members` keeps the collapsed rows reachable ([TC-085](TestPlan.md)). Deliberately **no `stability`** — see the note below |
+
+`families` carries no stability number, and this is not an omission. [`SnippetFamily.stability`](Schema.md#11-snippetfamily)
+is "in how many of the indexed versions does this snippet exist", computed over the whole corpus. The
+only thing derivable from a result list is how many versions survived into the top-k, which for an
+unchanged snippet is always exactly one: `chunk_id` is `digest(text, file_path, start_line)` and carries
+no version, so two versions' copies of an untouched function are literally the same candidate and fusion
+has already merged them. Publishing that ratio as "stability" would put `0.50` on a query card for the
+same family `GET /v1/families` reports as `1.00`. Ask §3.3 for stability.
 
 **The determinism contract excludes `elapsed_ms` *and every value under `timings`.*** Both are
 wall-clock readings and neither is reproducible across runs; comparing `timings` **key sets** is
@@ -246,7 +255,50 @@ Example:
 **Status codes:** `200` always when the index root is readable; `503` if `.axiom/registry.json` is
 missing or corrupt (see `INDEX_UNAVAILABLE` in §6).
 
-### 3.3 `GET /v1/chunk/{chunk_id}`
+### 3.3 `GET /v1/families`
+
+Browses snippet families across the indexed versions — the *no-query* half of `FR-21`, and the HTTP
+equivalent of `axiom families`. Where §3.1's `families` answers "what else did this one result have",
+this answers "what has changed in this codebase across versions" without a query at all. Both call
+`pipeline.list_families`, so the two surfaces cannot disagree about what the corpus contains.
+
+**Query parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `version` | `str \| null` | `null` (every built version, newest first) | restrict to one version; same pattern constraint as §3.1's `version` |
+| `limit` | `int` | `20` | page size, `0 <= limit <= 500`. `0` means "every match", still capped at `500` |
+| `multi_only` | `bool` | `false` | only families spanning two or more versions |
+| `diffs` | `bool` | `false` | attach per-transition unified diffs. **Costs real work** — a diff per transition for every family on the page — so request it for the one family a user expanded, not for the list |
+
+**Response body — `200 OK`**
+
+| Field | Type | Description |
+|---|---|---|
+| `families` | `list[`[`SnippetFamily`](Schema.md#11-snippetfamily)`]` | at most `limit` of them. Serialised fields are exactly `family_id`, `representative`, `versions`, `members`, `stability`, `diffs`. `is_multi_version` is a Python property, **not** a wire field — derive it as `versions.length >= 2` |
+| `total` | `int` | families matching the filter **before** `limit` truncated — without it a client cannot tell "there are 12" from "there are 400 and you asked for 12" |
+| `version_ids` | `list[str]` | the versions the families were computed over, newest first. This list's length is `stability`'s denominator |
+
+Two `representative` fields, two different things — the one trap in this surface. Here it is the full
+[`Chunk`](Schema.md#6-chunk) object (`representative.metadata.symbol`, `representative.location.file_path`);
+in §3.1's `families` block it is a bare `chunk_id` string. §3.1 is a pointer into `results`, which already
+carries the chunk; this endpoint has no `results` to point into, so it carries the chunk itself.
+
+Grouping needs vectors: two same-named functions in one file are one family only if they are also
+near-identical ([TC-082](TestPlan.md)). Those come from the content-addressed blob store, and when
+numpy or the blobs are absent every family degrades to a single member and says so in the log — the
+honest answer rather than a merge that never compared anything ([Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade)).
+
+**Status codes**
+
+| Code | When |
+|---|---|
+| `200` | families were computed, including the empty-list case |
+| `404` | a `version` was named that does not resolve (`VERSION_NOT_FOUND`, §6) |
+| `422` | `version` is malformed, or `limit` is out of range |
+| `503` | no index has been built at all (`INDEX_UNAVAILABLE`) |
+
+### 3.4 `GET /v1/chunk/{chunk_id}`
 
 Hydrates one full [`Chunk`](Schema.md#6-chunk) by id — text, location, metadata. Used by the
 Streamlit UI and any client that received a `chunk_id` from a prior `/v1/query` call and wants the
@@ -280,7 +332,7 @@ full record again without re-running retrieval.
 The 404/503 split is whose fault it is: a version the *client* named that does not exist is a
 scoping error against a healthy index; no index at all is the server having nothing to serve.
 
-### 3.4 `GET /v1/health`
+### 3.5 `GET /v1/health`
 
 Liveness probe, plus the canonical way to force eager model loading before the demo — this is the
 endpoint [Setup.md's troubleshooting table](Setup.md#9-troubleshooting) points at for the
@@ -549,7 +601,7 @@ the same Pydantic models as the CLI."
 
 | Subcommand | `--json` output |
 |---|---|
-| `axiom query` | Identical shape to `POST /v1/query`'s response body (§3.1) — all eleven fields, not the first six. `--all-versions` adds a `families` key |
+| `axiom query` | Identical shape to `POST /v1/query`'s response body (§3.1) — all twelve fields, not the first six. `families` is always present and is empty unless `--all-versions` |
 | `axiom classify` | The [`QueryPlan`](Schema.md#10-queryplan) object alone, unwrapped |
 | `axiom versions` | Identical shape to `GET /v1/versions` (§3.2): `active_version`, `versions` |
 | `axiom families` | `list[`[`SnippetFamily`](Schema.md#11-snippetfamily)`]` |

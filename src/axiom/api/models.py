@@ -24,12 +24,13 @@ a 422 before any file is opened (TC-071 asserts exactly that, with a patched
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from axiom.schema import Chunk, QueryPlan, QueryType, RetrievalResult
+from axiom.schema import Chunk, QueryPlan, QueryType, RetrievalResult, SnippetFamily
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from axiom.pipeline import IndexReport
@@ -223,6 +224,92 @@ def flatten_timings(ledger: Any) -> dict[str, float]:
     return totals
 
 
+class FamilyMember(ApiModel):
+    """One version's copy of a snippet, inside a :class:`QueryFamily`."""
+
+    chunk_id: str = Field(..., min_length=1)
+    version_id: str = Field(default="")
+    location: str = Field(default="", description="``path:start-end``, as the UI shows it.")
+    score: float = Field(default=0.0)
+
+
+class QueryFamily(ApiModel):
+    """A collapsed cross-version result group (FR-21).
+
+    Returned only when a query asked for ``all_versions``. Deliberately carries
+    **no stability number**: :class:`~axiom.schema.SnippetFamily`'s ``stability``
+    is "in how many indexed versions does this snippet exist", computed over the
+    whole corpus, and the only thing derivable from a result list is how many
+    versions survived into the top-k. For an unchanged snippet that is always
+    exactly one -- ``chunk_id`` is ``digest(text, file_path, start_line)`` and
+    carries no version, so two versions' copies of an untouched function are
+    literally the same candidate and fusion already merged them. Publishing that
+    ratio as "stability" would put ``0.50`` on a query card for the same family
+    ``GET /v1/families`` reports as ``1.00``. Ask that endpoint for stability.
+    """
+
+    family_id: str = Field(..., min_length=1)
+    representative: str = Field(
+        ..., min_length=1, description="chunk_id of the member that survived into the results."
+    )
+    versions: list[str] = Field(default_factory=list)
+    members: list[FamilyMember] = Field(default_factory=list)
+
+
+def collapse_families(
+    results: Sequence[RetrievalResult],
+) -> tuple[list[RetrievalResult], list[QueryFamily]]:
+    """Keep one result per snippet family (FR-21, TC-085).
+
+    A cross-version query naturally returns the same function once per version,
+    which is three rows saying one thing. ``family_id`` is defined by Schema.md
+    section 11 as ``blake2b-128(symbol, file_path)``, so collapsing on it is the
+    model's own notion of "same snippet" rather than a heuristic invented here.
+    The highest-scoring member survives as the representative, because the
+    incoming list is already sorted by the score the user is shown.
+
+    Lives here, beside the envelope it returns, because both the API and the CLI
+    render it. The CLI grew its own copy first; one definition is what stops the
+    two surfaces disagreeing about what a family is.
+
+    Returns:
+        ``(collapsed results, families)`` in the same order, one family per kept
+        result.
+    """
+    from axiom.core.hashing import compute_family_id
+
+    kept: list[RetrievalResult] = []
+    order: list[str] = []
+    by_family: dict[str, dict[str, Any]] = {}
+
+    for result in results:
+        family_id = compute_family_id(result.chunk.metadata.symbol, result.chunk.location.file_path)
+        block = by_family.get(family_id)
+        if block is None:
+            block = {
+                "family_id": family_id,
+                "representative": result.chunk.chunk_id,
+                "versions": [],
+                "members": [],
+            }
+            by_family[family_id] = block
+            order.append(family_id)
+            kept.append(result)
+        version_id = result.chunk.metadata.version_id
+        if version_id not in block["versions"]:
+            block["versions"].append(version_id)
+        block["members"].append(
+            FamilyMember(
+                chunk_id=result.chunk.chunk_id,
+                version_id=version_id,
+                location=result.chunk.location.as_ref(),
+                score=result.score,
+            )
+        )
+
+    return kept, [QueryFamily(**by_family[family_id]) for family_id in order]
+
+
 class QueryResponse(ApiModel):
     """Body of ``POST /v1/query`` -- and of ``axiom query --json`` (API.md section 8).
 
@@ -273,6 +360,11 @@ class QueryResponse(ApiModel):
     )
     degradations: list[str] = Field(
         default_factory=list, description="Ladder rungs taken during this query."
+    )
+    families: list[QueryFamily] = Field(
+        default_factory=list,
+        description="Cross-version groups, one per result, in result order. "
+        "Empty unless the request set all_versions.",
     )
 
     @classmethod
@@ -329,8 +421,29 @@ class VersionsResponse(ApiModel):
     versions: list[VersionSummary] = Field(default_factory=list)
 
 
+class FamiliesResponse(ApiModel):
+    """Body of ``GET /v1/families`` -- and of ``axiom families --json``'s content.
+
+    The CLI emits the bare ``list[SnippetFamily]`` API.md section 8 documents;
+    this envelope adds what an HTTP client cannot otherwise learn: how many
+    families exist before ``limit`` truncated the list, and which versions
+    ``stability`` was computed over. Without ``total`` a UI cannot tell "there
+    are 12 families" from "there are 400 and you asked for 12".
+    """
+
+    families: list[SnippetFamily] = Field(default_factory=list)
+    total: int = Field(
+        default=0, ge=0, description="Families matching the filter, before ``limit``."
+    )
+    version_ids: list[str] = Field(
+        default_factory=list,
+        description="Versions the families were computed over, newest first. This "
+        "list's length is ``stability``'s denominator.",
+    )
+
+
 class HealthResponse(ApiModel):
-    """Body of ``GET /v1/health`` (API.md section 3.4).
+    """Body of ``GET /v1/health`` (API.md section 3.5).
 
     ``warmed`` is empty on a plain liveness check *and* on a repeat warm call:
     the field reports what this call constructed, not what is currently loaded,
@@ -423,13 +536,17 @@ __all__ = [
     "ChunkResponse",
     "ErrorCode",
     "ErrorResponse",
+    "FamiliesResponse",
+    "FamilyMember",
     "HealthResponse",
     "IndexSummary",
+    "QueryFamily",
     "QueryRequest",
     "QueryResponse",
     "VersionSummary",
     "VersionsResponse",
     "WarningItem",
+    "collapse_families",
     "flatten_timings",
     "max_body_bytes",
     "top_k_ceiling",

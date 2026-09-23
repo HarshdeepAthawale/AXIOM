@@ -220,7 +220,7 @@ class TestRequestValidation:
 
 
 class TestResponseEnvelope:
-    """API.md section 3.1: eleven fields, all always present, nothing else."""
+    """API.md section 3.1: twelve fields, all always present, nothing else."""
 
     def test_the_documented_field_set_is_exhaustive_in_both_directions(self) -> None:
         documented = {
@@ -235,6 +235,7 @@ class TestResponseEnvelope:
             "score_field",
             "version_ids",
             "degradations",
+            "families",
         }
         assert set(QueryResponse.model_fields) == documented
         assert QueryResponse.model_config["extra"] == "forbid"
@@ -541,7 +542,7 @@ class TestHandlersWithoutAServer:
 class TestQueryEndpoint:
     """``POST /v1/query`` over HTTP (API.md section 3.1)."""
 
-    def test_a_well_formed_query_is_a_200_with_all_eleven_fields(self, client: Any) -> None:
+    def test_a_well_formed_query_is_a_200_with_all_twelve_fields(self, client: Any) -> None:
         response = client.post("/v1/query", json={"query": "bluetooth deeplink", "top_k": 3})
         assert response.status_code == 200
         body = response.json()
@@ -822,6 +823,7 @@ class TestRoutingSurface:
         assert set(schema.json()["paths"]) == {
             "/v1/query",
             "/v1/versions",
+            "/v1/families",
             "/v1/chunk/{chunk_id}",
             "/v1/health",
         }
@@ -1030,3 +1032,136 @@ class TestCorsOptIn:
 
         monkeypatch.setenv(CORS_ORIGINS_ENV, raw)
         assert cors_origins() == expected
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/families and the query envelope's families block
+# ---------------------------------------------------------------------------
+
+
+class TestFamiliesEndpoint:
+    """API.md section 3.3 -- the no-query half of FR-21, over HTTP."""
+
+    def test_a_default_listing_is_a_200_with_the_documented_envelope(self, client: Any) -> None:
+        response = client.get("/v1/families")
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == {"families", "total", "version_ids"}
+        assert body["version_ids"], "families are meaningless without a version to compute over"
+        assert len(body["families"]) <= 20
+
+    def test_total_counts_matches_not_the_page(self, client: Any) -> None:
+        """Without this a client cannot tell "there are 3" from "you asked for 3"."""
+        full = client.get("/v1/families", params={"limit": 0}).json()
+        page = client.get("/v1/families", params={"limit": 1}).json()
+        assert page["total"] == full["total"]
+        assert len(page["families"]) <= 1 <= max(page["total"], 1)
+
+    def test_limit_zero_means_every_match(self, client: Any) -> None:
+        body = client.get("/v1/families", params={"limit": 0}).json()
+        assert len(body["families"]) == body["total"]
+
+    def test_stability_denominator_is_the_version_list(self, client: Any) -> None:
+        """``stability`` is over the corpus, so it must never exceed 1.0."""
+        body = client.get("/v1/families", params={"limit": 0}).json()
+        for family in body["families"]:
+            assert 0.0 < family["stability"] <= 1.0
+
+    def test_multi_only_never_returns_a_single_version_family(self, client: Any) -> None:
+        body = client.get("/v1/families", params={"limit": 0, "multi_only": True}).json()
+        assert all(len(family["versions"]) >= 2 for family in body["families"])
+
+    def test_the_serialised_family_is_the_documented_field_set(self, client: Any) -> None:
+        """API.md section 3.3. ``is_multi_version`` is a property, not a wire field.
+
+        Pinned because the natural mistake is to document the model's Python
+        surface: a frontend told to read ``is_multi_version`` gets ``undefined``
+        and silently renders every family as single-version.
+        """
+        from axiom.schema import SnippetFamily
+
+        body = client.get("/v1/families", params={"limit": 0}).json()
+        for family in body["families"]:
+            assert set(family) == set(SnippetFamily.model_fields)
+            assert "is_multi_version" not in family
+
+    def test_the_representative_is_a_whole_chunk_here(self, client: Any) -> None:
+        """Unlike section 3.1's families block, where it is a bare chunk_id string."""
+        body = client.get("/v1/families", params={"limit": 1}).json()
+        for family in body["families"]:
+            assert isinstance(family["representative"], dict)
+            assert "location" in family["representative"]
+
+    def test_diffs_are_off_unless_asked_for(self, client: Any) -> None:
+        """They cost a diff per transition per family; a list view must not pay it."""
+        plain = client.get("/v1/families", params={"limit": 0}).json()
+        assert all(not family["diffs"] for family in plain["families"])
+
+    @pytest.mark.parametrize("bad", ["../etc", ".hidden", "a/b"])
+    def test_a_malformed_version_is_422_not_a_path_read(self, client: Any, bad: str) -> None:
+        response = client.get("/v1/families", params={"version": bad})
+        assert response.status_code == 422
+        assert response.json()["error"] == "VALIDATION_ERROR"
+
+    def test_an_unresolvable_version_is_404(self, client: Any) -> None:
+        response = client.get("/v1/families", params={"version": "v999"})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("bad", [-1, 501])
+    def test_limit_out_of_range_is_422(self, client: Any, bad: int) -> None:
+        assert client.get("/v1/families", params={"limit": bad}).status_code == 422
+
+    def test_the_cli_and_the_api_report_the_same_families(
+        self, parity_client: Any, api_index: Any
+    ) -> None:
+        """One loader (``pipeline.list_families``) means one answer, not two."""
+        from typer.testing import CliRunner
+
+        from axiom.cli import app as cli_app
+
+        result = CliRunner().invoke(
+            cli_app,
+            ["--index-root", str(api_index.index_root), "--json", "families", "--limit", "0"],
+        )
+        assert result.exit_code == 0, result.output
+        cli = json.loads(result.stdout)
+        api = parity_client.get("/v1/families", params={"limit": 0}).json()
+        assert [f["family_id"] for f in cli] == [f["family_id"] for f in api["families"]]
+        assert [f["stability"] for f in cli] == [f["stability"] for f in api["families"]]
+
+
+class TestQueryFamiliesBlock:
+    """API.md section 3.1's ``families`` field."""
+
+    def test_it_is_present_and_empty_on_a_single_version_query(self, client: Any) -> None:
+        """A key that appears only sometimes forces every client to branch on it."""
+        body = client.post("/v1/query", json={"query": "normalize the command", "top_k": 5}).json()
+        assert body["families"] == []
+
+    def test_all_versions_populates_one_family_per_result(self, client: Any) -> None:
+        body = client.post(
+            "/v1/query", json={"query": "normalize the command", "top_k": 5, "all_versions": True}
+        ).json()
+        assert len(body["families"]) == len(body["results"])
+        representatives = [family["representative"] for family in body["families"]]
+        assert representatives == [result["chunk"]["chunk_id"] for result in body["results"]], (
+            "families must be in result order, one per row, so a UI can zip them"
+        )
+
+    def test_every_collapsed_member_stays_reachable(self, client: Any) -> None:
+        """TC-085: collapsing hides rows; it must not lose them."""
+        body = client.post(
+            "/v1/query", json={"query": "normalize the command", "top_k": 5, "all_versions": True}
+        ).json()
+        for family in body["families"]:
+            assert family["members"], "a family with no members collapsed nothing"
+            assert family["representative"] in {m["chunk_id"] for m in family["members"]}
+            assert set(family["versions"]) == {m["version_id"] for m in family["members"]}
+
+    def test_it_publishes_no_stability_number(self, client: Any) -> None:
+        """Deriving one from a result list contradicts GET /v1/families -- see §3.1."""
+        body = client.post(
+            "/v1/query", json={"query": "normalize the command", "top_k": 5, "all_versions": True}
+        ).json()
+        for family in body["families"]:
+            assert "stability" not in family

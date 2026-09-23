@@ -398,9 +398,15 @@ def snippet_families(
 ) -> tuple[dict[str, SnippetFamily], list[str]]:
     """Group the displayed results into snippet families across versions (FR-21).
 
-    Reads the local index directly rather than asking the API, because there is
-    no families endpoint (API.md section 3 defines four) and because the UI and
-    the index sit on the same machine in every topology this project ships --
+    Reads the local index directly rather than asking the API, and the reason is
+    narrower than it used to be. There is now a families endpoint (API.md section
+    3.3), but it answers a different question: it browses the *whole corpus*,
+    while this needs the families of the handful of results on screen, with
+    ``stability`` -- which section 3.1's per-query ``families`` block
+    deliberately does not carry, because a ratio derived from a result list
+    contradicts the one computed over the corpus. Asking section 3.3 for the
+    whole corpus to display five rows is the wrong trade, and the UI and the
+    index sit on the same machine in every topology this project ships --
     including Deployment.md's compose file, where both containers mount the same
     volume.
 

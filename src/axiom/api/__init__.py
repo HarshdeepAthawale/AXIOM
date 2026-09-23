@@ -1,4 +1,4 @@
-"""The HTTP surface: four endpoints over the one pipeline (FR-24, API.md).
+"""The HTTP surface: five endpoints over the one pipeline (FR-24, API.md).
 
 ``models`` is re-exported eagerly -- it is pure Pydantic over the shared schema,
 it is what ``cli.py`` serialises ``--json`` output with, and it costs nothing.
@@ -20,8 +20,11 @@ from typing import Any
 from axiom.api.models import (
     ErrorCode,
     ErrorResponse,
+    FamiliesResponse,
+    FamilyMember,
     HealthResponse,
     IndexSummary,
+    QueryFamily,
     QueryRequest,
     QueryResponse,
     VersionsResponse,
@@ -34,8 +37,11 @@ __all__ = [
     "ApiError",
     "ErrorCode",
     "ErrorResponse",
+    "FamiliesResponse",
+    "FamilyMember",
     "HealthResponse",
     "IndexSummary",
+    "QueryFamily",
     "QueryRequest",
     "QueryResponse",
     "ServeDependencyError",

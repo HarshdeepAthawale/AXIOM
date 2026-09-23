@@ -1077,6 +1077,94 @@ def format_ranked_lines(response: QueryResponse) -> list[str]:
     return lines
 
 
+def list_families(
+    settings: Settings,
+    *,
+    version: str | None = None,
+    multi_only: bool = False,
+    with_diffs: bool = False,
+) -> tuple[list[SnippetFamily], list[str]]:
+    """Every snippet family across the indexed versions (FR-21, browse path).
+
+    Lifted out of ``axiom families``'s command body so the HTTP surface can
+    answer the same question. It was fifty lines of index loading sitting inside
+    a Typer callback, which meant ``GET /v1/families`` could only have existed as
+    a second copy of it -- and a second copy of "which versions count, and which
+    blobs were loadable" is exactly the kind of divergence that makes the CLI and
+    the API disagree about what the corpus contains.
+
+    Grouping needs vectors: two same-named functions in one file are one family
+    only if they are also near-identical (TC-082). Those come from the
+    content-addressed blob store, and an unreadable blob is logged and skipped
+    rather than raised -- every family then degrades to a single member and says
+    so, which is the honest answer rather than a merge that never compared
+    anything (Rule 3).
+
+    Args:
+        settings: Resolved configuration; names the index root.
+        version: Restrict to one version id. ``None`` uses every built version,
+            newest first.
+        multi_only: Drop families that exist in only one version.
+        with_diffs: Attach per-transition unified diffs. Costs real work, so it
+            is off unless asked for.
+
+    Returns:
+        ``(families, version_ids)`` -- the families, and the versions they were
+        computed over, in the order that defined ``stability``'s denominator.
+
+    Raises:
+        IndexNotFoundError: No built index, or the named version has no manifest.
+    """
+    from axiom.indexing import manifest as mf
+    from axiom.versioning.evolutionary import build_families
+
+    if version is not None:
+        version_ids = [mf.resolve_version(settings, version)]
+    else:
+        version_ids = [
+            candidate
+            for candidate in mf.load_registry(settings).newest_first()
+            if mf.manifest_path(settings, candidate).is_file()
+        ]
+    if not version_ids:
+        raise IndexNotFoundError(f"no built index under {mf.index_root(settings)}")
+
+    chunks_by_version: dict[str, list[Chunk]] = {}
+    embeddings: dict[str, list[float]] = {}
+    for version_id in version_ids:
+        members = mf.read_version_chunks(settings, version_id)
+        if not members:
+            continue
+        chunks_by_version[version_id] = members
+        manifest = mf.try_read_manifest(settings, version_id)
+        dim = manifest.embedding_dim if manifest is not None else None
+        for chunk in members:
+            if chunk.content_hash in embeddings:
+                continue
+            try:
+                vector = mf.load_blob(settings, chunk.content_hash, expected_dim=dim)
+            except Exception as exc:
+                _LOG.warning("blob %s unusable: %s", chunk.content_hash, exc)
+                continue
+            if vector is not None:
+                # evolutionary.cosine takes a Sequence[float]; a numpy array
+                # cannot answer its truthiness test, so convert at the call site
+                # rather than loosening a frozen module's types.
+                embeddings[chunk.content_hash] = [float(value) for value in vector]
+
+    families = build_families(
+        chunks_by_version,
+        embeddings or None,
+        settings,
+        version_order=version_ids,
+        total_versions=len(version_ids),
+        with_diffs=with_diffs,
+    )
+    if multi_only:
+        families = [family for family in families if family.is_multi_version]
+    return families, version_ids
+
+
 def iter_degradations(response: QueryResponse) -> Iterable[str]:
     """Deduplicated degradation notes, for the UI's "what fell back" panel."""
     return dict.fromkeys(response.degradations)
@@ -1092,6 +1180,7 @@ __all__ = [
     "build_index_detailed",
     "format_ranked_lines",
     "iter_degradations",
+    "list_families",
     "match_reason",
     "optimization_hint",
     "query",

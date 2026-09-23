@@ -55,7 +55,7 @@ from axiom.core.errors import (
     IndexNotFoundError,
 )
 from axiom.core.logging import configure_logging, get_logger
-from axiom.schema import Chunk, QueryType, RetrievalResult, SignalKind
+from axiom.schema import QueryType, RetrievalResult, SignalKind
 
 _LOG = get_logger("cli")
 
@@ -590,66 +590,20 @@ def _render_query_human(
 
 
 def _collapse_families(
-    results: Sequence[RetrievalResult], version_ids: Sequence[str]
+    results: Sequence[RetrievalResult],
 ) -> tuple[list[RetrievalResult], dict[str, dict[str, Any]]]:
-    """Keep one result per snippet family (FR-21, TC-085).
+    """Keep one result per snippet family, keyed for the renderer (FR-21, TC-085).
 
-    A cross-version query naturally returns the same function three times, once
-    per version, which is three rows saying one thing. ``family_id`` is defined by
-    Schema.md section 11 as ``blake2b-128(symbol, file_path)`` -- so collapsing on
-    it is the model's own notion of "same snippet", not a heuristic invented here.
-    The highest-scoring member survives as the representative because the incoming
-    list is already sorted by the score the user is shown.
-
-    Deliberately carries **no stability number**. ``SnippetFamily.stability`` is
-    "in how many of the indexed versions does this snippet exist", computed over
-    the corpus by ``versioning.evolutionary`` and used for the ranking bonus. The
-    only thing derivable here is "how many versions are represented among the
-    rows that survived into the top-k", which for an unchanged snippet is always
-    exactly one -- ``chunk_id`` is ``digest(text, file_path, start_line)`` and
-    carries no version, so v1's and v2's copies of an untouched function are
-    literally the same candidate and fusion has already merged them. Printing
-    that ratio under the name "stability" put ``0.50`` on a query card for the
-    same family ``axiom families`` reports as ``1.00``, which is the sort of
-    contradiction a judge finds before you do.
-
-    Returns:
-        ``(collapsed results, chunk_id -> family block)``. The family block is
-        keyed by the surviving representative's ``chunk_id`` so the renderer can
-        look it up without re-deriving anything.
+    The grouping itself lives in :func:`axiom.api.models.collapse_families`, so
+    the CLI and ``POST /v1/query`` cannot disagree about what a family is -- this
+    is only the re-keying the human renderer wants, ``chunk_id`` of the surviving
+    representative to its family block, so a result card can look its own family
+    up without re-deriving anything.
     """
-    from axiom.core.hashing import compute_family_id
+    from axiom.api.models import collapse_families
 
-    kept: list[RetrievalResult] = []
-    blocks: dict[str, dict[str, Any]] = {}
-    by_family: dict[str, dict[str, Any]] = {}
-
-    for result in results:
-        family_id = compute_family_id(result.chunk.metadata.symbol, result.chunk.location.file_path)
-        block = by_family.get(family_id)
-        if block is None:
-            block = {
-                "family_id": family_id,
-                "representative": result.chunk.chunk_id,
-                "versions": [],
-                "members": [],
-            }
-            by_family[family_id] = block
-            blocks[result.chunk.chunk_id] = block
-            kept.append(result)
-        version_id = result.chunk.metadata.version_id
-        if version_id not in block["versions"]:
-            block["versions"].append(version_id)
-        block["members"].append(
-            {
-                "chunk_id": result.chunk.chunk_id,
-                "version_id": version_id,
-                "location": result.chunk.location.as_ref(),
-                "score": result.score,
-            }
-        )
-
-    return kept, blocks
+    kept, families = collapse_families(results)
+    return kept, {family.representative: family.model_dump(mode="json") for family in families}
 
 
 # --------------------------------------------------------------------------
@@ -1091,16 +1045,17 @@ def query_command(
         results = list(response.results)
         families: dict[str, dict[str, Any]] = {}
         if all_versions:
-            results, families = _collapse_families(results, response.version_ids)
+            results, families = _collapse_families(results)
 
         if json_output:
             payload = response.as_dict()
             payload["results"] = [r.model_dump(mode="json") for r in results]
-            if all_versions:
-                # Additive to API.md section 3.1's envelope, and only on the flag
-                # that creates the need: a collapsed row hides its other members,
-                # and TC-085 requires them to stay reachable.
-                payload["families"] = list(families.values())
+            # Always present, empty off the --all-versions path. A key that
+            # appears only sometimes forces every client to branch on its
+            # absence, and the two surfaces would then disagree about the
+            # envelope depending on a flag (TC-085 needs the members reachable;
+            # nothing needs the key to vanish).
+            payload["families"] = list(families.values())
             _emit_json(payload)
             return
 
@@ -1337,56 +1292,14 @@ def families_command(
         settings = _resolve_settings(
             ctx, profile=profile, index_root=index_root, log_level=log_level
         )
-        from axiom.indexing import manifest as mf
-        from axiom.versioning.evolutionary import build_families
+        from axiom import pipeline
 
         target = _checked_version_id(
             version or state.version, flag="--version", json_output=json_output
         )
-        if target is not None:
-            version_ids = [mf.resolve_version(settings, target)]
-        else:
-            version_ids = [
-                candidate
-                for candidate in mf.load_registry(settings).newest_first()
-                if mf.manifest_path(settings, candidate).is_file()
-            ]
-        if not version_ids:
-            raise IndexNotFoundError(f"no built index under {mf.index_root(settings)}")
-
-        chunks_by_version: dict[str, list[Chunk]] = {}
-        embeddings: dict[str, list[float]] = {}
-        for version_id in version_ids:
-            members = mf.read_version_chunks(settings, version_id)
-            if not members:
-                continue
-            chunks_by_version[version_id] = members
-            manifest = mf.try_read_manifest(settings, version_id)
-            dim = manifest.embedding_dim if manifest is not None else None
-            for chunk in members:
-                if chunk.content_hash in embeddings:
-                    continue
-                try:
-                    vector = mf.load_blob(settings, chunk.content_hash, expected_dim=dim)
-                except Exception as exc:
-                    _LOG.warning("blob %s unusable: %s", chunk.content_hash, exc)
-                    continue
-                if vector is not None:
-                    # evolutionary.cosine takes a Sequence[float]; a numpy array
-                    # cannot answer its truthiness test, so convert at the call
-                    # site rather than loosening a frozen module's types.
-                    embeddings[chunk.content_hash] = [float(value) for value in vector]
-
-        families = build_families(
-            chunks_by_version,
-            embeddings or None,
-            settings,
-            version_order=version_ids,
-            total_versions=len(version_ids),
-            with_diffs=diffs,
+        families, version_ids = pipeline.list_families(
+            settings, version=target, multi_only=multi_only, with_diffs=diffs
         )
-        if multi_only:
-            families = [family for family in families if family.is_multi_version]
         shown = families if limit <= 0 else families[:limit]
 
         if json_output:

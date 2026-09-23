@@ -452,7 +452,7 @@ script is "Executed by the presenter before recording and again before the live 
    ```
    Confirm `warmed` names every component before starting to record. On a **second** warm call
    `warmed` is empty and `elapsed_ms` is near zero — that is the field reporting what *this* call
-   constructed, not a failure ([API.md §3.4](API.md#34-get-v1health)).
+   constructed, not a failure ([API.md §3.5](API.md#35-get-v1health)).
 3. Record. Show the wall-clock timer on screen for `M-13` per
    [TestPlan.md §7](TestPlan.md#7-manual-test-script-demo-day), and show `M-08` (incremental
    reindex) and `M-10` (evolutionary retrieval) running live, not narrated over a static screenshot —

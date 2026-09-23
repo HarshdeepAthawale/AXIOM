@@ -31,12 +31,14 @@ from axiom import pipeline
 from axiom.api.models import (
     CHUNK_ID_PATTERN,
     ErrorCode,
+    FamiliesResponse,
     HealthResponse,
     QueryRequest,
     QueryResponse,
     VersionsResponse,
     VersionSummary,
     WarningItem,
+    collapse_families,
 )
 from axiom.config import Settings, get_settings
 from axiom.core.errors import (
@@ -190,7 +192,17 @@ def run_query(request: QueryRequest, settings: Settings | None = None) -> QueryR
     except AxiomContractError as exc:
         raise ApiError(500, ErrorCode.CONTRACT_VIOLATION, str(exc)) from exc
 
-    return QueryResponse.from_pipeline(result, extra_warnings=extra)
+    body = QueryResponse.from_pipeline(result, extra_warnings=extra)
+    if not request.all_versions:
+        return body
+
+    # Collapsing is the caller's answer to "the same function came back once per
+    # version". It runs only on the all-versions path because on a single-version
+    # query every family has exactly one member, and a families block that says
+    # nothing is worse than no families block -- a UI would draw a version
+    # selector with one entry in it.
+    kept, families = collapse_families(body.results)
+    return body.model_copy(update={"results": kept, "families": families})
 
 
 # ---------------------------------------------------------------------------
@@ -250,12 +262,78 @@ def list_versions(settings: Settings | None = None) -> VersionsResponse:
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/families
+# ---------------------------------------------------------------------------
+
+#: Families returned when a request does not say otherwise. Matches the CLI's
+#: ``FAMILY_LIST_LIMIT`` so the two surfaces show the same page by default
+#: (Rules.md AP-07: a documented default, never a literal at a callsite).
+DEFAULT_FAMILY_LIMIT = 20
+
+#: Ceiling on ``limit``. Building families walks every chunk of every version and
+#: loads a blob per distinct content hash, so an unbounded page is a way to ask
+#: this process to read the whole corpus into memory.
+MAX_FAMILY_LIMIT = 500
+
+
+def list_families(
+    version: str | None = None,
+    limit: int = DEFAULT_FAMILY_LIMIT,
+    multi_only: bool = False,
+    diffs: bool = False,
+    settings: Settings | None = None,
+) -> FamiliesResponse:
+    """Browse snippet families across indexed versions (API.md section 3.3, FR-21).
+
+    The HTTP half of ``axiom families``: same corpus, same grouping, same
+    degradation behaviour, because both call :func:`axiom.pipeline.list_families`
+    rather than each loading the index their own way.
+
+    ``diffs`` is off by default and costs real work when on -- a unified diff per
+    transition, for every family on the page -- so a UI should request it for the
+    one family a user expanded, not for the list.
+
+    Args:
+        version: Restrict to one version id. ``None`` uses every built version.
+        limit: Page size; ``0`` means every match, capped at
+            :data:`MAX_FAMILY_LIMIT`.
+        multi_only: Only families spanning two or more versions.
+        diffs: Attach per-transition unified diffs.
+        settings: Configuration; the process default when omitted.
+
+    Raises:
+        ApiError: 422 for a malformed ``version`` or a negative ``limit``; 503
+            when no index has been built.
+    """
+    resolved = _settings_for(settings)
+    _validate_version_param(version)
+    if limit < 0:
+        raise ApiError(422, ErrorCode.VALIDATION_ERROR, "limit must be zero or positive")
+    page = MAX_FAMILY_LIMIT if limit == 0 else min(limit, MAX_FAMILY_LIMIT)
+
+    try:
+        families, version_ids = pipeline.list_families(
+            resolved, version=version, multi_only=multi_only, with_diffs=diffs
+        )
+    except IndexNotFoundError as exc:
+        raise _index_error(exc, version) from exc
+    except AxiomContractError as exc:
+        raise ApiError(500, ErrorCode.CONTRACT_VIOLATION, str(exc)) from exc
+
+    # ``total`` counts what matched, not what fitted, so a client can tell
+    # "there are twelve" from "there are four hundred and you asked for twelve".
+    return FamiliesResponse(
+        families=families[:page], total=len(families), version_ids=list(version_ids)
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/chunk/{chunk_id}
 # ---------------------------------------------------------------------------
 
 
 def get_chunk(chunk_id: str, version: str | None = None, settings: Settings | None = None) -> Chunk:
-    """Hydrate one chunk by id (API.md section 3.3).
+    """Hydrate one chunk by id (API.md section 3.4).
 
     Streams ``chunks.jsonl`` and validates only the matching row. The whole-file
     :func:`~axiom.indexing.manifest.read_chunks` would validate 10,000 models to
@@ -302,7 +380,7 @@ def get_chunk(chunk_id: str, version: str | None = None, settings: Settings | No
 
 #: Components already constructed in this process, so a repeat ``?warm=true``
 #: reports an empty ``warmed`` list instead of claiming credit twice (API.md
-#: section 3.4).
+#: section 3.5).
 _WARMED: set[str] = set()
 
 
@@ -335,7 +413,7 @@ def _warm_llm(settings: Settings) -> str | None:
 
 
 def warm_models(settings: Settings | None = None) -> list[str]:
-    """Eagerly construct the lazy model singletons (API.md section 3.4).
+    """Eagerly construct the lazy model singletons (API.md section 3.5).
 
     Returns:
         The components constructed *on this call*, in load order. Empty when
@@ -474,6 +552,15 @@ def build_router(settings: Settings | None = None) -> Any:
         """List every indexed version and the active pointer."""
         return await _offload(list_versions, resolved)
 
+    async def families_endpoint(
+        version: str | None = Query(default=None),
+        limit: int = Query(default=DEFAULT_FAMILY_LIMIT, ge=0, le=MAX_FAMILY_LIMIT),
+        multi_only: bool = Query(default=False),
+        diffs: bool = Query(default=False),
+    ) -> FamiliesResponse:
+        """Browse snippet families across indexed versions."""
+        return await _offload(list_families, version, limit, multi_only, diffs, resolved)
+
     async def chunk_endpoint(
         chunk_id: str = Path(..., pattern=CHUNK_ID_PATTERN),
         version: str | None = Query(default=None),
@@ -488,6 +575,7 @@ def build_router(settings: Settings | None = None) -> Any:
 
     _register("POST", "/query", query_endpoint, response_model=QueryResponse)
     _register("GET", "/versions", versions_endpoint, response_model=VersionsResponse)
+    _register("GET", "/families", families_endpoint, response_model=FamiliesResponse)
     _register("GET", "/chunk/{chunk_id}", chunk_endpoint, response_model=Chunk)
     _register("GET", "/health", health_endpoint, response_model=HealthResponse)
     return router
