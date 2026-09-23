@@ -25,18 +25,46 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from axiom.schema.enums import QueryType, SignalKind
 
-#: Constants still tracked as PLACEHOLDER in TechSpecifications.md section 5.
+#: Constants still carrying `PLACEHOLDER` status: chosen by judgement, not yet
+#: measured. Rules.md AP-14 forbids a reported score from resting on one.
 PLACEHOLDER_FIELDS: frozenset[str] = frozenset(
     {
         "chunk_min_tokens",
         "chunk_target_tokens",
         "agent_sufficiency_top1",
         "agent_sufficiency_floor",
-        "dedupe_cosine",
         "stability_bonus",
-        "eval_sparse_weight",
     }
 )
+
+#: Placeholders that have since been measured, with the evidence. Kept as a
+#: record rather than deleted: "this value was guessed and later confirmed" is a
+#: different and stronger claim than "this value was always right", and the
+#: distinction is exactly what AP-14 exists to preserve.
+RESOLVED_PLACEHOLDERS: dict[str, str] = {
+    "eval_sparse_weight": (
+        "OQ-02 — swept 0.0-0.5 on the AppsRetrieval TRAIN partition (1,500 queries, "
+        "5,000 docs); 0.15 maximises NDCG@10 at 26.02 against 25.06 for dense-only. "
+        "data/sweeps/oq02_sparse_weight.json"
+    ),
+    "dedupe_cosine": (
+        "OQ-11 — 45,753 chunk pairs over a 3-version corpus; 0.95 is the "
+        "minimum-error threshold (1.0% members missed, 0.022% wrongly merged). "
+        "data/sweeps/oq11_dedupe_cosine.json"
+    ),
+}
+
+#: When a placeholder is *unreachable*, given the active settings, it cannot
+#: affect the number, and flagging it against a run is a false positive that
+#: teaches people to ignore the guard. A constant behind a disabled feature flag
+#: is the clearest case: `configs/eval.yaml` turns the agent and the
+#: evolutionary layer off, so their thresholds are never read during an eval.
+#: Each entry answers "can this field be read under these settings?".
+_REACHABLE_WHEN: dict[str, str] = {
+    "agent_sufficiency_top1": "agent_enabled",
+    "agent_sufficiency_floor": "agent_enabled",
+    "stability_bonus": "evolutionary_enabled",
+}
 
 #: Default per-QueryType RRF weights, (dense, sparse, structural).
 #: Locked in _CONTRACT.md section 5; every row sums to 1.0.
@@ -134,11 +162,17 @@ class Settings(BaseSettings):
 
     # --- Versioning and evolutionary -------------------------------------
     evolutionary_enabled: bool = Field(default=False)
-    dedupe_cosine: float = Field(default=0.95, description="PLACEHOLDER, OQ-11.")
+    dedupe_cosine: float = Field(
+        default=0.95,
+        description="Measured: OQ-11, minimum-error threshold over 45,753 pairs.",
+    )
     stability_bonus: float = Field(default=0.10, description="PLACEHOLDER, OQ-11.")
 
     # --- Eval -------------------------------------------------------------
-    eval_sparse_weight: float = Field(default=0.15, description="PLACEHOLDER, OQ-02.")
+    eval_sparse_weight: float = Field(
+        default=0.15,
+        description="Measured: OQ-02, swept on the train partition; peak NDCG@10.",
+    )
     eval_dense_weight: float = Field(default=0.85)
 
     # --- Services ---------------------------------------------------------
@@ -161,7 +195,23 @@ class Settings(BaseSettings):
         return dict(DEFAULT_STRATEGY_WEIGHTS[query_type])
 
     def active_placeholders(self) -> list[str]:
-        """Placeholder-status fields, for the AP-14 guard on reported scores."""
+        """Unmeasured constants that this configuration can actually read.
+
+        The AP-14 guard on reported scores consumes this. It is deliberately
+        narrower than :data:`PLACEHOLDER_FIELDS`: a threshold behind a disabled
+        feature flag cannot influence the run, and reporting it would be a false
+        positive. Anything whose gate is *on* is reported, as is anything with
+        no gate at all.
+        """
+        active: list[str] = []
+        for field in PLACEHOLDER_FIELDS:
+            gate = _REACHABLE_WHEN.get(field)
+            if gate is None or bool(getattr(self, gate, True)):
+                active.append(field)
+        return sorted(active)
+
+    def all_placeholders(self) -> list[str]:
+        """Every field still carrying placeholder status, gated or not."""
         return sorted(PLACEHOLDER_FIELDS)
 
 

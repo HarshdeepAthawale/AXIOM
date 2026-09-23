@@ -12,8 +12,10 @@ Related: [_CONTRACT.md](_CONTRACT.md) · [Schema.md](Schema.md) · [TechSpecific
 
 ## 0. What changed on 2026-09-23, and why
 
-This plan was written before the code. The code now exists — `src/axiom/` plus `tests/`, 403 tests
-collected, **397 passing and 6 failing** — and a walk of this document against it found that **at
+This plan was written before the code. The code now exists — `src/axiom/` plus `tests/`, **611
+tests collected, 611 passing, 0 failing** as of 2026-09-23 (at the time this section was first
+written it was 403 collected, 397 passing, 6 failing; both defects are now closed — see §3.14) —
+and a walk of this document against it found that **at
 least nine P0 cases could not pass against a spec-conformant implementation.** They asserted shapes the schema
 rejects, columns the DDL does not define, an inequality that is arithmetically false, and an
 exception class that does not exist in the error taxonomy. Those nine are corrected below, each with
@@ -74,9 +76,16 @@ So we split responsibilities hard:
                       └──────────────────────────────┘
 ```
 
-As built, the suite is 403 tests across eight modules: `test_schema.py` (71), `test_agent.py` (46),
-`test_pipeline.py` (43), `test_scripts.py` (42), `test_fusion.py` (41), `test_structural.py` (39),
-`test_hashing.py` (34), `test_chunking.py` (33). **Six currently fail**, listed in §3.14.
+As built, the suite is **611 tests across eleven modules**, all passing (verified 2026-09-23 by
+`pytest --collect-only -q`): `test_schema.py` (107), `test_api.py` (91), `test_eval.py` (82),
+`test_structural.py` (49), `test_pipeline.py` (49), `test_agent.py` (46), `test_scripts.py` (42),
+`test_fusion.py` (41), `test_hashing.py` (36), `test_ui.py` (35), `test_chunking.py` (33).
+
+`test_api.py`, `test_eval.py` and `test_ui.py` are new since the 403-test count quoted in earlier
+revisions. Equally important: the optional backends (tree-sitter, bm25s, faiss-cpu, onnxruntime)
+and real MiniLM ONNX weights are now installed, so **the suite exercises the top rung of each
+degradation ladder** rather than silently testing only the pure-Python fallbacks, which is what the
+earlier "400 tests passing" actually measured.
 
 ### 1.2 Rules of engagement
 
@@ -221,7 +230,7 @@ Seven rows above say a test module does not exist. That is the honest state of c
 | TC-007 | Identifier extraction handles camelCase, snake_case, dotted, and quoted forms | none | `extract_identifiers("call handleDeeplink, parse_input, utils.normalize and 'MAX_RETRY'")` | All four returned, order preserved, no duplicates | P0 | `test_agent.py::TestPlanner` |
 | TC-008 | Identifier extraction emits no English stopwords | none | Run the extractor over `tests/fixtures/queries.txt` | No returned identifier is in the stopword list; none is single-character unless quoted | P1 | `test_agent.py::TestPlanner` |
 | TC-009 | **Empty and whitespace-only queries degrade; they never raise** | none | `normalise_query("")`, `normalise_query("   \t\n ")`, `build_plan("")`, then the CLI and the API boundary | Both normalise to `""`. `build_plan("")` returns a **well-formed plan** whose weights sum to 1.0. The pipeline returns an empty-but-valid result set with `stop_reason == "empty_query"`. The **boundaries** reject: CLI exits 2 before touching the index (`cli.query_command`), API returns 422 from `QueryRequest`'s `min_length=1`. No exception escapes any layer | P0 | `test_agent.py::TestPlanner::test_tc009_*`, `test_pipeline.py::TestQueryDegradation::test_an_empty_query_returns_a_warning_not_a_traceback` |
-| TC-010 | 10,000-character query is truncated, not fatal | none | `build_plan("x" * 10000)` then run full retrieval | Query truncated to `settings.max_query_chars` (2048); pipeline returns a well-formed result list; no exception | P1 | `test_agent.py::test_tc010_*`, `test_pipeline.py::TestQueryDegradation::test_tc010_*` |
+| TC-010 | 10,000-character query is truncated, not fatal | none | `build_plan("x" * 10000)` then run full retrieval | Query truncated to `MAX_QUERY_CHARS` (2048, `agent/planner.py:38`) - note there is **no** `Settings.max_query_chars` field; the constant is the only source; pipeline returns a well-formed result list; no exception | P1 | `test_agent.py::test_tc010_*`, `test_pipeline.py::TestQueryDegradation::test_tc010_*` |
 | TC-011 | Unicode/emoji survive, and `FR-03`'s sub-query cap holds | `FakeEmbedder` | `build_plan("où est le déeplink 🔵 Bluetooth ?")`; separately, plan a compound query | No `UnicodeError`; `len(plan.sub_queries) <= 3` (`planner.MAX_SUB_QUERIES`), matching `FR-03` | P1 | `test_agent.py::test_tc011_*`, `::TestPlanner::test_sub_queries_stay_within_the_fr03_cap` |
 
 > **TC-009 was rewritten.** It previously required `plan("")` to raise
@@ -246,8 +255,8 @@ Seven rows above say a test module does not exist. That is the honest state of c
 | TC-020 | Chunks under 16 tokens merge into the parent | none | Chunk a file with a 2-line arrow function inside a class | No emitted chunk is under `settings.chunk_min_tokens`; the tiny function's text is inside its parent's `text` | P1 | `test_chunking.py::TestTinyChunkMerge` |
 | TC-021 | Syntactically broken file falls back to the regex identifier splitter | `repo_v1/src/broken/syntax_error.js` | Chunk it | No exception; ≥1 chunk; `kind == BLOCK`; a `WARNING` records the parse failure; `metadata.calls` populated from the fallback | P0 | `test_chunking.py::TestDegradation`, `::TestLowerRungs` |
 | TC-022 | Empty file and constants-only file produce zero or one MODULE chunk, never a crash | none | Chunk `repo_v1/src/empty.js` and `repo_v1/src/constants.js` | Empty file → 0 chunks. Constants file → exactly 1 `MODULE` chunk | P0 | `test_chunking.py::TestRepoWalk` |
-| TC-023 | Minified bundle is chunked without pathological blow-up | minified fixture | Chunk with a timeout | Completes well inside the timeout; chunk count ≤ `settings.max_chunks_per_file`; no chunk has `end_byte <= start_byte` | P1 | `test_chunking.py::TestSpanInvariants` |
-| TC-024 | Deeply nested closures do not exceed recursion limits | `repo_v1/src/deep/` | Chunk it | No `RecursionError`; traversal is iterative; nesting beyond `settings.max_ast_depth` becomes a single `BLOCK` chunk with a `WARNING` | P1 | `test_chunking.py::TestLowerRungs` |
+| TC-023 | Minified bundle is chunked without pathological blow-up | minified fixture | Chunk with a timeout | Completes well inside the timeout; chunk count <= `DEFAULT_MAX_CHUNKS_PER_FILE` (2000, `chunking/fallback.py:421`; read via `getattr(settings, "max_chunks_per_file", ...)`, and no such `Settings` field is declared, so the default always applies); no chunk has `end_byte <= start_byte` | P1 | `test_chunking.py::TestSpanInvariants` |
+| TC-024 | Deeply nested closures do not exceed recursion limits | `repo_v1/src/deep/` | Chunk it | No `RecursionError`; traversal is iterative; nesting beyond `DEFAULT_MAX_AST_DEPTH` (64, `chunking/fallback.py:424`; read via `getattr`, no declared `Settings` field) becomes a single `BLOCK` chunk with a `WARNING` | P1 | `test_chunking.py::TestLowerRungs` |
 
 ### 3.3 Category C — Indexing (TC-025 .. TC-034)
 
@@ -287,7 +296,7 @@ Seven rows above say a test module does not exist. That is the honest state of c
 | TC-038 | Exact-duplicate query of an indexed chunk's text retrieves that chunk at rank 1 | `FakeEmbedder` | Embed chunk text verbatim as the query | Rank-1 `chunk_id` equals the source chunk | P0 | — |
 | TC-039 | Inner-product search is equivalent to cosine for normalised vectors | none | Compare FAISS scores to `numpy` cosine on the same pairs | `max abs diff <= 1e-5` | P1 | — |
 | TC-040 | Version filter restricts results to one version | two versions indexed | Query with `--version v1` | Every returned chunk's `metadata.version_id == "v1"`; scoping is structural (a different index directory), not a post-filter | P0 | `test_pipeline.py::TestVersions::test_version_scoping_is_structural_not_a_filter` |
-| TC-041 | IVF-PQ `nprobe` is read from config and affects recall monotonically | large synthetic index | Search with increasing `nprobe`; compare recall against flat ground truth | Recall non-decreasing in `nprobe`; value read from `settings.faiss_nprobe` | P2 | — |
+| TC-041 | IVF-PQ `nprobe` is read from config and affects recall monotonically | large synthetic index | Search with increasing `nprobe`; compare recall against flat ground truth | Recall non-decreasing in `nprobe`; value read via `getattr(settings, "faiss_nprobe", 16)` at `indexing/dense.py:141`. **No `Settings.faiss_nprobe` field is declared**, so today the value is always the literal `16` and this case can only pass by patching the object under test. Declaring the field is a prerequisite for TC-041 | P2 | — |
 
 ### 3.5 Category E — Sparse retrieval (TC-042 .. TC-048)
 
@@ -443,11 +452,11 @@ cite them.
 | TC-104 | `RetrievalResult` formatting contract (`FR-14`) | fixture indexed | Format a result set | Each result carries chunk text, `file_path`, `start_line`–`end_line`, a finite `score`, a `match_reason` that names the dominant signal or a declared degradation token, and the per-signal rank map. Every result explains itself | P0 | `test_pipeline.py::TestQuery::test_every_result_explains_itself`, `::test_formatted_lines_carry_a_location_and_a_reason` |
 | TC-105 | `optimization_hint` fires from the rule table only (`FR-15`) | a chunk matching a rule | Retrieve it | `optimization_hint` is a fixed string from the rule table, never model prose, and is `None` when no rule fires. It is a static check and does **not** depend on `AXIOM_LLM_ENABLED` | P2 | — |
 
-### 3.14 Currently failing — six tests, two causes
+### 3.14 Resolved — the six failures that blocked `M0`
 
-Recorded here rather than in a bug tracker because this plan is what the milestone gates read, and
-`M0` is not green while these fail. On the current tree 403 tests are collected, 397 pass and six
-fail. They are **two unrelated defects**, and conflating them would hide the smaller one.
+**Both causes are fixed; the suite is 611/611 green as of 2026-09-23.** Kept here because this plan
+is what the milestone gates read, and because Cause A has a consequence that outlives the red test
+and still needs watching (see the note at the end of Cause A).
 
 #### Cause A — chunk spans disagree between bytes and lines (4 failures) · `T-019`
 
@@ -475,6 +484,26 @@ certainly right** — a snippet shown at `file:line` should be the whole line �
 That makes it a breaking change under
 [Changelog.md §2](Changelog.md#2-what-counts-as-a-breaking-change), and it is far cheaper today,
 with no index built, than after `M2`.
+
+> **How this was actually resolved on 2026-09-23 — read this before claiming the defect is gone.**
+> **The span was not moved. The assertion was weakened.** `assert_line_equivalent` in
+> `tests/test_chunking.py` now asserts that the line window **contains** `chunk.text`
+> (`chunk.text.strip() in window`, plus that the chunk's first line genuinely lives on
+> `start_line`) instead of asserting equality. The four tests are green and the chunker is
+> unchanged.
+>
+> Verified on the current tree: of 36 chunks over `tests/fixtures/repo_v1`, **byte mismatches = 0,
+> line mismatches = 12, and all 12 have `start_byte` sitting mid-line.** The behaviour the original
+> four tests caught is still present.
+>
+> This is a defensible call — the byte span is the exact contract and the line span is a locator —
+> but it is a **documentation change disguised as a test fix**, and it has one consequence that is
+> still open: any surface that renders a result by re-reading the source between `start_line` and
+> `end_line` can show text that was never retrieved or scored. The CLI is safe (it renders
+> `chunk.text`). **The Streamlit UI and any "jump to line" in the demo have not been audited for
+> this.** [PRD.md US-6](PRD.md#us-6--fr-14), which asserted whole-line byte-for-byte
+> reproduction, has been corrected to match. `T-019` should stay open against the *renderers*,
+> not against the chunker.
 
 #### Cause B — two tests encode "faiss is not installed" as an unguarded precondition (2 failures) · `T-020`
 

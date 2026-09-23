@@ -11,6 +11,13 @@ data/
 models/
 *.onnx
 *.gguf
+# The MTEB submission artifact. It is ignored by default because intermediate
+# runs land here, but the ONE that ships must be committable -- Deployment.md
+# section 4.2 step 3 does `git add appsretrieval_results.json`, and Rules.md
+# section 9.5 forbids `git add -f`. The negation below is what makes that work.
 appsretrieval_results.json
+!appsretrieval_results.json
 .axiom*/
 data/eval_cache/
+data/sweeps/
+!data/sweeps/*.json

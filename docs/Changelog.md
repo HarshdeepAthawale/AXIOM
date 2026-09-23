@@ -113,8 +113,16 @@ holds.
 
 This is the first entry in this document that describes something that actually happened. Three
 commits (`bccece0`, `405a4a7`, `d821e61`) put 69 Python modules and roughly 27,000 lines under
-`src/axiom/`, `scripts/` and `tests/`. `ruff` is clean. **The suite is not: 403 tests are collected,
-397 pass and 6 fail** — see the closing note on this entry.
+`src/axiom/`, `scripts/` and `tests/`. `ruff` is clean. **At the moment `0.1.0` was cut the suite
+was not: 403 tests collected, 397 passing, 6 failing** — see the closing note on this entry.
+
+> **State as of 2026-09-23, after `0.1.0`.** Everything in the "does not contain" list below has
+> moved. The suite is **611/611 passing** with `ruff check` and `ruff format --check` clean; a real
+> embedder (`all-MiniLM-L6-v2` INT8 ONNX) has been loaded and run; and a first retrieval number
+> exists — dense-only **NDCG@10 = 7.59** on the full CoIR `AppsRetrieval` test split, not
+> reportable. The live status is [Tracker.md](Tracker.md) and
+> [ImplementationPlan.md §0](ImplementationPlan.md#0-re-baseline-notice--read-this-before-anything-else),
+> not this entry; this entry is kept as the record of what `0.1.0` itself contained.
 
 Landed:
 
@@ -135,12 +143,16 @@ Landed:
 **What `0.1.0` explicitly does not contain, stated plainly because it is the fact that matters
 most:**
 
-- **No retrieval-quality number.** NDCG@10, MRR@10 and Recall@100 are unmeasured. There is no
-  `appsretrieval_results.json`, no row in [Tracker.md §5](Tracker.md#5-eval-metrics-log), and no row
-  in `artifacts/experiments.csv`. Any figure quoted for this project before `0.2.0` is fabricated.
-- **No real model has ever been loaded.** All 400 tests run against `FakeEmbedder`,
-  `FakeCrossEncoder` and `FakeLLM`. No ONNX artifact has been exported and no weight downloaded, so
-  every latency, throughput and memory figure in the doc suite remains a budget, not a measurement.
+- **No retrieval-quality number** *(resolved after `0.1.0` — see the note above)*. At `0.1.0`,
+  NDCG@10, MRR@10 and Recall@100 were unmeasured, with no `appsretrieval_results.json`, no row in
+  [Tracker.md §5](Tracker.md#5-eval-metrics-log) and no row in `artifacts/experiments.csv`. Any
+  figure quoted for this project before that first measured run is fabricated.
+  `appsretrieval_results.json` still does not exist.
+- **No real model has ever been loaded** *(partly resolved after `0.1.0`)*. At `0.1.0` all 403
+  tests ran against `FakeEmbedder`, `FakeCrossEncoder` and `FakeLLM`. A real embedder has since
+  been run; **no reranker or LLM weight has**, and the configured primary embedder
+  `Qwen/Qwen3-Embedding-0.6B` has still never been downloaded. Every latency, throughput and
+  memory figure in the doc suite therefore remains a budget, not a measurement.
 - **No latency or RSS measurement.** `scripts/bench_latency.py` exists and is unit-tested; it has
   never been pointed at a real index.
 - **No demo corpus.** `data/demo_repo/` is empty; `OQ-07` is open.
@@ -167,7 +179,7 @@ that reports a green build it does not have is worth nothing.
   installed and the faiss rung runs. Small, but it means the dense primary path has been exercised
   less than the run count implied.
 
-Detail in [TestPlan.md §3.14](TestPlan.md#314-currently-failing--six-tests-two-causes). **`0.1.0`
+Detail in [TestPlan.md §3.14](TestPlan.md#314-resolved--the-six-failures-that-blocked-m0). **`0.1.0`
 is tagged as the honest record of what landed, not as a green build.**
 
 ### `0.2.0` — measured dense baseline

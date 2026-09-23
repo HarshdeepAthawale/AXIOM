@@ -429,7 +429,13 @@ projection, a citation, or a target. Where a run is not reportable, it says so a
 |---|---|---|---|---|
 | Dense only, `all-MiniLM-L6-v2` (22M params) | 7.59 | 6.39 | 27.22 | 39 min |
 | Dense + BM25, weighted RRF (.85/.15) | **7.78** | **6.60** | 27.17 | 17 min (cached) |
-| Target in `docs/PRD.md` | 20.0 | 22.0 | 65.0 | — |
+| **Gate in `docs/PRD.md` §2** | **>= 1.36 x `B`** | >= 1.36 x `B_mrr` | — | — |
+
+`B` is the dense-only row above — **our own measured baseline**, NDCG@10 = 7.59. The gates are
+stated as multiples of it, not as absolutes: the previously-quoted absolute targets (20.0 / 22.0 /
+65.0) were derived from the unsourced "BGE 0.6B = 14.7" figure and were retired with it. On today's
+baseline `1.36 x B` is **10.3**, and the full pipeline has not yet been measured against it —
+no reranker weights exist, so every row above ran with rerank in passthrough.
 
 **What the ablation shows, and it is not what we assumed.** Adding the sparse leg moves NDCG@10 by
 `+0.19` and MRR@10 by `+0.21` — a real but small gain — while Recall@100 moves by `-0.05`, which is

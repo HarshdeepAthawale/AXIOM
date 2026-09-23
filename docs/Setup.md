@@ -110,7 +110,7 @@ python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 # WRONG:    2.4.1+cu121 False   <- CUDA wheel, uninstall and repeat
 ```
 
-Torch is used only for the one-time ONNX export (§6) and as a fallback embedding runtime when `AXIOM_EMBEDDING_BACKEND=torch`. The steady-state hot path is ONNX Runtime.
+Torch is used only for the one-time ONNX export (§6), and transitively by `mteb` in the `[eval]` extra. **There is no torch embedding runtime** — `AXIOM_EMBEDDING_BACKEND` is not implemented (§7.1). The hot path is ONNX Runtime, and below it the degradation ladder, never torch.
 
 ---
 
@@ -532,7 +532,7 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 |---|---|---|---|
 | `AXIOM_PROFILE` | str | `default` | Loads `configs/<profile>.yaml`. Valid: `default`, `demo`, `eval`, `fast`, `accurate` — five, and `demo` is first-class, not a rename of `default` ([_CONTRACT.md](_CONTRACT.md) §3). |
 | `AXIOM_INDEX_ROOT` | path | `.axiom` | Root of the on-disk index tree ([_CONTRACT.md](_CONTRACT.md) §6). |
-| `AXIOM_DATA_ROOT` | path | `data` | Models, datasets, HF cache parent. |
+| `AXIOM_DATA_ROOT` | path | `data` | **NOT IMPLEMENTED (2026-09-23)** — setting this has no effect. There is no `data_root` field on `Settings` and no code reads this name; `data/` is hard-coded at the call sites that use it. |
 | `AXIOM_LOG_LEVEL` | str | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR`. |
 | `AXIOM_LOG_FORMAT` | str | `console` | `console` for humans, `json` for CI and the demo box. |
 | `AXIOM_NUM_THREADS` | int | `0` | ONNX Runtime intra-op threads and FAISS `omp_set_num_threads`. `0` = physical core count. Set to 4 on a laptop to keep the UI responsive while indexing. |
@@ -544,17 +544,36 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 | Variable | Type | Default | Effect |
 |---|---|---|---|
 | `AXIOM_EMBEDDING_MODEL` | str | `Qwen/Qwen3-Embedding-0.6B` | HF repo id of the dense embedder. Set to `sentence-transformers/all-MiniLM-L6-v2` to use the fallback. |
-| `AXIOM_EMBEDDING_BACKEND` | str | `onnx` | `onnx` (INT8, production) or `torch` (fp32, debugging only — ~4x slower). |
-| `AXIOM_EMBEDDING_ONNX_PATH` | path | `data/models/onnx/qwen3-embedding-0.6b-int8/model.onnx` | Overrides the derived artifact path. |
+| `AXIOM_EMBEDDING_BACKEND` | str | `onnx` | **NOT IMPLEMENTED (2026-09-23)** — setting this has no effect. There is no `embedding_backend` field and no torch runtime in `indexing/embedder.py`; the embedder is ONNX Runtime or a degraded rung, never torch. |
+| `AXIOM_EMBEDDING_ONNX_PATH` | path | *(derived)* | **NOT IMPLEMENTED (2026-09-23)** — setting this has no effect. See the note below the table. The path is always derived from `embedding_model` by `_onnx_dir_for`; put the artifact where the derivation expects it (§7.2). |
 | `AXIOM_EMBEDDING_DIM` | int | `1024` | Asserted against the loaded model at startup; a mismatch is fatal, not a warning. |
 | `AXIOM_EMBEDDING_BATCH_SIZE` | int | `64` | Chunks per forward pass during indexing. Drop to `16` on an 8 GB box. |
-| `AXIOM_EMBEDDING_MAX_TOKENS` | int | `512` | Truncation length for chunk text. |
+| `AXIOM_EMBEDDING_MAX_TOKENS` | int | `512` | **NOT IMPLEMENTED (2026-09-23)** — setting this has no effect. See the note below the table. `512` is `DEFAULT_MAX_TOKENS` in `indexing/embedder.py` and cannot currently be changed from outside the code. **This matters:** `all-MiniLM-L6-v2` publishes `max_seq_length: 256`, so on the fallback rung Axiom truncates at twice the model's trained length. |
 | `AXIOM_EMBEDDING_QUERY_INSTRUCTION` | str | `Given a natural-language question about a codebase, retrieve the code snippets that answer it` | The `{task}` half of the `Instruct: {task}\nQuery:{query}` envelope, applied on the **query side only**, and only by an instruction-tuned embedder (§6.2). Committed to `configs/` so a reported score is reproducible from a SHA. |
 | `AXIOM_RERANKER_MODEL` | str | `BAAI/bge-reranker-v2-m3` | HF repo id of the cross-encoder. Profile-split: `eval.yaml` keeps this value, `demo.yaml` and `fast.yaml` set `cross-encoder/ms-marco-MiniLM-L-6-v2` ([_CONTRACT.md](_CONTRACT.md) §2). |
 | `AXIOM_RERANK_MAX_CHARS` | int | `4096` | Per-document truncation window before cross-encoder scoring. Cost is quadratic in sequence length for the attention term, so this and `AXIOM_FUSION_TOP_N` are the two levers on rerank latency. `eval.yaml` sets `1024`. |
 | `AXIOM_RERANKER_ENABLED` | bool | `true` | `false` returns the raw RRF ordering, and the response's `score_field` reads `rrf_score` rather than `rerank_score`. The accuracy cost is an ablation row we owe, not a figure this document may assert unmeasured. |
 | `AXIOM_RERANKER_ONNX_PATH` | path | `data/models/onnx/bge-reranker-v2-m3-int8/model.onnx` | Overrides the derived artifact path. |
 | `AXIOM_RERANKER_TIMEOUT_MS` | int | `2500` | Per-query rerank wall clock. On expiry the RRF order is returned and `RERANKER_TIMEOUT` is surfaced as a warning. |
+
+> **Why some `AXIOM_*` overrides work and some silently do not.** There are two helpers named
+> `_tunable` in the codebase and they do not behave the same way.
+> `rerank/cross_encoder.py:207` resolves `Settings` field → `AXIOM_<FIELD>` environment variable →
+> default, so every reranker tunable above (`AXIOM_RERANK_MAX_CHARS`, `AXIOM_RERANKER_ONNX_PATH`,
+> `AXIOM_RERANK_LEXICAL_FALLBACK`, …) is a real knob even though `Settings` declares none of them.
+> `indexing/embedder.py:82` is `return getattr(settings, field, default)` — it **never reads the
+> environment**. So an embedder tunable that is not one of the 43 `Settings` fields is inert, and
+> inert *silently*: you get the documented default and no warning.
+>
+> That is why `AXIOM_EMBEDDING_ONNX_PATH` and `AXIOM_EMBEDDING_MAX_TOKENS` are marked NOT
+> IMPLEMENTED above while their reranker equivalents are not. The asymmetry is a defect, not a
+> design: `Rules.md` §7 states one precedence chain for the whole project. Closing it is a
+> three-line change to `indexing/embedder.py::_tunable` to match its sibling — but it changes
+> runtime behaviour, so it is recorded here rather than done as part of a documentation pass.
+>
+> To check what is actually settable:
+> `axiom --app-version` then `python -c "from axiom.config import Settings; print(sorted(Settings.model_fields))"`.
+> Anything not in that list, and not read literally in `src/`, does nothing.
 
 ### 7.3 Agent and LLM
 
@@ -596,7 +615,7 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 
 | Variable | Type | Default | Effect |
 |---|---|---|---|
-| `AXIOM_ACTIVE_VERSION` | str \| null | `null` | Overrides the active version in `registry.json`. `null` means "use the registry". |
+| `AXIOM_ACTIVE_VERSION` | str \| null | `null` | **NOT IMPLEMENTED (2026-09-23)** — setting this has no effect. No `active_version` field exists on `Settings` and no code reads this name. Use `--version <id>` on the CLI, or `?version=` on the API, to pin a version. |
 | `AXIOM_EVOLUTIONARY_ENABLED` | bool | `false` | Enables cross-version search and `SnippetFamily` grouping. Off by default because it widens candidate sets. |
 | `AXIOM_DEDUPE_COSINE` | float | `0.95` | Family membership threshold within the same `symbol` + `file_path`. |
 | `AXIOM_STABILITY_BONUS` | float | `0.10` | `final = base * (1 + bonus * stability)` for families in ≥2 versions. |
@@ -627,7 +646,7 @@ Copy to `.env` (gitignored) and edit:
 # ---- core ----
 AXIOM_PROFILE=default
 AXIOM_INDEX_ROOT=.axiom
-AXIOM_DATA_ROOT=data
+# AXIOM_DATA_ROOT is NOT implemented - no code reads it; data/ is hard-coded
 AXIOM_LOG_LEVEL=INFO
 AXIOM_LOG_FORMAT=console
 AXIOM_NUM_THREADS=0
@@ -711,9 +730,12 @@ axiom --app-version
 axiom --help
 ```
 
-Expected: `axiom 0.1.0`, then the usage block listing eleven subcommands — `index`, `reindex`,
-`query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc`, and the hidden `version`
-alias.
+Expected: `axiom 0.1.0`, then a usage block listing **ten** subcommands — `index`, `reindex`,
+`query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc`. Eleven are *registered*;
+`version` is `hidden=True`, so it works but is deliberately absent from `--help`. If you are
+counting subcommands across documents: **nine** is the `FR-23` set (excludes `gc`), **ten** is what
+`--help` prints, **eleven** is what `cli.py` registers. All three numbers are correct about
+different things.
 
 **`--app-version`, not `--version`.** The global `--version` flag takes a *string*: it names the
 **index version id** to operate on, and `axiom --version` on its own is a usage error, not a
@@ -779,7 +801,8 @@ index. Any *other* degrade line is a real finding. In particular:
   degraded:  indexing.embedder: ... no ONNX export at data/models/onnx/... -> next rung
 ```
 
-means §6's export never ran, or `AXIOM_EMBEDDING_ONNX_PATH` points somewhere else. The index still
+means §6's export never ran, or the artifact is not where `_onnx_dir_for` derives its path
+(`AXIOM_EMBEDDING_ONNX_PATH` will not redirect it — that variable is not implemented, §7.1). The index still
 builds and still answers queries — the bottom rung is a seeded bag-of-token-hashes, not noise — but
 it is **not** a semantic retriever, and no number measured on it means anything.
 

@@ -471,9 +471,12 @@ the query LLM. Locked in `_CONTRACT.md §2`, enforced as
 [`NG-17`](NonGoals.md#ng-17--no-proprietary-model-api-on-the-core-path).
 
 **Alternatives considered:**
-- *PyTorch fp32 inference throughout.* Rejected: ~4x slower than the ONNX INT8 path (documented as
-  the reason `AXIOM_EMBEDDING_BACKEND=torch` is a debugging-only fallback in
-  [Setup.md §7.2](Setup.md)), and materially larger download/RSS footprint against `NFR-12`.
+- *PyTorch fp32 inference throughout.* Rejected: ~4x slower than the ONNX INT8 path, and
+  materially larger download/RSS footprint against `NFR-12`. Rejected *completely* — earlier
+  revisions of this ADR described `AXIOM_EMBEDDING_BACKEND=torch` as a debugging-only fallback,
+  but no such variable and no torch runtime exist in `indexing/embedder.py`. There is no torch
+  inference path to fall back to; below ONNX Runtime the ladder goes straight to the seeded hash
+  embedder.
 - *A proprietary API (OpenAI/Anthropic/Voyage) for embedding and reranking.* Rejected outright by
   [`NG-17`](NonGoals.md#ng-17--no-proprietary-model-api-on-the-core-path) — a network-restricted
   judging laptop, an expired key, or a rate limit could zero the score on judging day, which is an
@@ -617,6 +620,12 @@ everywhere, with exactly three exceptions.
 | **Exception 1** — release tag | `PRISM_GENAI_HACKATHON_Y2026`, organiser-prescribed, unchanged |
 | **Exception 2** — event name | "Samsung PRISM GenAI Hackathon" is the *event*, not the project |
 | **Exception 3** — rival repo | `github.com/DeshnaDey/Samsung-PRISM` is someone else's URL |
+| **Exception 4** — our repo URL | `github.com/HarshdeepAthawale/Samsung-Prism-Hack` predates the rename; renaming it breaks every documented clone URL. Left as-is |
+| **Exception 5** — on-disk sidecar | `sparse.bm25s/prism_meta.json` (`indexing/sparse.py:79`). The only `prism` literal that reaches disk. Renaming it is a format change requiring a full reindex; left as-is for this cycle |
+
+The complete list, with the reasoning for each, is
+[`_CONTRACT.md §0`](_CONTRACT.md#0-identity). Exceptions 4 and 5 were added on
+2026-09-23; this ADR originally named only the first three.
 
 `_CONTRACT.md §0/§1/§3` carried `prism` / `PRISM_` / package `prism` until 2026-09-23 and **has
 since been corrected** — twenty-one of the twenty-two docs already used `axiom`, and so does all 27k

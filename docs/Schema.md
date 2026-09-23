@@ -3,8 +3,23 @@
 Canonical data-model reference for Axiom: every Pydantic model, enum, identity function, and on-disk format that other workstreams code against.
 
 **Owner:** Prabinder Singh
-**Last updated:** 2026-09-15
-**Status:** Draft
+**Last updated:** 2026-09-23
+**Status:** Accepted
+
+> **Reconciled against the code on 2026-09-23.** This file was not covered by the 2026-09-23
+> documentation pass and had drifted furthest of any document in the suite. Three classes of error
+> were corrected, all in the direction of the code:
+>
+> | Was | Is | Why |
+> |---|---|---|
+> | `PrismModel` (16 occurrences) | **`AxiomModel`** | `src/axiom/schema/_base.py:8`. [ADR-015](Decisions.md#adr-015--rename-prism-to-axiom) |
+> | "PRISM" as the project name | **Axiom** | Same. The release tag `PRISM_GENAI_HACKATHON_Y2026` and the event name "Samsung PRISM" are correct and are retained |
+> | `sub_queries` … `len <= 4` | **no schema bound**; planner caps at `MAX_SUB_QUERIES = 3` | §9. No such `Field` constraint has ever existed |
+> | §16.2 rule 2: readers raise `PrismSchemaVersionError` | **specified, not implemented** | No reader compares `schema_version`, and no such class exists |
+>
+> `sparse.bm25s/prism_meta.json` is **not** an error — it is the real filename written by
+> `src/axiom/indexing/sparse.py:79` (`META_FILENAME`) and is part of the on-disk format. Renaming
+> it is a format change requiring a reindex; see the note in §14.6.
 
 ---
 
@@ -1369,6 +1384,16 @@ mmap=True)`. Axiom treats the directory as opaque with one addition: Axiom write
 `sparse.bm25s/prism_meta.json` alongside it recording the tokeniser configuration, because bm25s
 does not persist the tokeniser and a query tokenised differently from the corpus silently returns
 garbage.
+
+> **The filename really is `prism_meta.json`, not `axiom_meta.json`.** It is
+> `META_FILENAME` at `src/axiom/indexing/sparse.py:79`, read back through
+> `src/axiom/retrieval/tokenizer.py` and `src/axiom/retrieval/sparse.py:374`. This is the last
+> `prism` literal that reaches disk, and it is therefore the one a judge can see by opening the
+> index directory. Renaming it is **a format change, not a rename**: every existing index would
+> need rebuilding, because the loader looks for this exact name. The decision is deliberately
+> recorded here rather than made silently — see
+> [ADR-015](Decisions.md#adr-015--rename-prism-to-axiom) for the naming rule this is the one
+> standing exception to.
 
 ```json
 {

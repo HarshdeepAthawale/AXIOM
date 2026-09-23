@@ -436,19 +436,33 @@ why a validator is a boundary gate rather than a stage.
 `appsretrieval_results.json` are ignored wholesale, while five rows above must be committed. The
 overlap is resolved by explicit negation, not by `git add -f`:
 
+**Corrected 2026-09-23 — the snippet previously printed here does not work.** Git cannot
+re-include a file whose *parent directory* is excluded, so `data/` followed by
+`!data/experiments.csv` leaves the file ignored and the negation silently inert. Verified:
+
+```console
+$ printf 'data/\n!data/experiments.csv\n' > .gitignore && git status --short
+?? .gitignore          # data/experiments.csv is still invisible
+$ printf 'data/*\n!data/experiments.csv\n' > .gitignore && git status --short
+?? .gitignore
+?? data/               # now it is committable
+```
+
+Two things resolve the overlap, and both are now in place:
+
+1. **The experiments log moved out of `data/` entirely** — it is `artifacts/experiments.csv`, and
+   `artifacts/` is not ignored. No negation is needed, which is why this is the better fix.
+2. **`appsretrieval_results.json` is at the repository root**, so its parent is not excluded and a
+   plain negation *does* work. `.gitignore` now carries it:
+
 ```gitignore
-data/
-!data/experiments.csv
-!data/splits/
-!data/bench/
+appsretrieval_results.json
 !appsretrieval_results.json
 ```
 
-Until those negations are in `.gitignore`, the submission runbook's
-`git add data/experiments.csv appsretrieval_results.json`
-([Deployment.md §4.2](Deployment.md#42-sequence) step 3) silently adds nothing, on the one day
-nobody has time to notice. If you find yourself typing `git add -f`, stop — the negation is
-missing, and that is the bug.
+If a path under `data/` ever genuinely must be committed, use `data/*` (not `data/`) plus the
+negation — or, better, put it under `artifacts/`. If you find yourself typing `git add -f`, stop:
+either the negation is missing or it is the inert kind, and that is the bug.
 
 ### 9.6 Performance regression policy
 

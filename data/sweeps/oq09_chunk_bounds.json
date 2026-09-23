@@ -1,0 +1,22 @@
+{
+  "question": "OQ-09",
+  "corpus": "generated JS corpus (scripts/make_demo_repo.py), 60 files",
+  "caveat": "Synthetic corpus: function bodies are uniform by construction, so the tail is thinner than real-world JS. Treat the floor/ceiling verdict as indicative, not final.",
+  "chunks": 101,
+  "min": 23,
+  "median": 95,
+  "max": 205,
+  "p10": 49,
+  "p25": 57,
+  "p75": 144,
+  "p90": 166,
+  "p95": 175,
+  "p99": 202,
+  "current": {
+    "floor": 16,
+    "target_low": 64,
+    "target_high": 512
+  },
+  "below_floor": 0,
+  "above_target": 0
+}

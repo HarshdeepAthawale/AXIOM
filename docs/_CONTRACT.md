@@ -27,18 +27,26 @@ The locked technical contract: the single source of truth every other document i
 | Python package | `axiom` (distribution name `axiom`, import root `src/axiom`) |
 | Repo layout | src-layout |
 
-**The project is named Axiom, everywhere, with exactly two exceptions.** `ADR-015` is Accepted: the
-package, the import root, the CLI entrypoint, the environment-variable prefix and the index
-directory are all `axiom` / `AXIOM_` / `.axiom/`. The word `PRISM` survives in precisely two places
-and means the Samsung programme, not this project:
+**The project is named Axiom, everywhere, with exactly five exceptions.** `ADR-015` is Accepted:
+the package, the import root, the CLI entrypoint, the environment-variable prefix and the index
+directory are all `axiom` / `AXIOM_` / `.axiom/`. This table is the **complete** list of surviving
+`prism`/`PRISM` literals; it was reconciled against the tree on 2026-09-23 and supersedes the
+shorter lists that [ADR-015](Decisions.md#adr-015--rename-prism-to-axiom) and
+[OpenQuestions OQ-06](OpenQuestions.md) each give.
 
-| Surviving `PRISM` literal | What it is |
-|---|---|
-| `PRISM_GENAI_HACKATHON_Y2026` | The release tag. Organiser-prescribed; it does not change. |
-| "Samsung PRISM GenAI Hackathon" | The event name. |
+| # | Surviving literal | What it is | Changeable? |
+|---|---|---|---|
+| 1 | `PRISM_GENAI_HACKATHON_Y2026` | The release tag. Organiser-prescribed. | No |
+| 2 | "Samsung PRISM GenAI Hackathon" | The **event** name, not this project's. | No |
+| 3 | `github.com/DeshnaDey/Samsung-PRISM` | The rival submission's URL. Someone else's. | No |
+| 4 | `github.com/HarshdeepAthawale/Samsung-Prism-Hack` | **Our own** repository URL, and the directory a clone lands in. Predates the rename. | Yes, but renaming a repo breaks every clone URL in the docs and in the submission form. **Decision: leave it.** |
+| 5 | `sparse.bm25s/prism_meta.json` | The tokeniser sidecar, `META_FILENAME` at `src/axiom/indexing/sparse.py:79`. **The only `prism` literal that reaches disk**, and therefore the only one a judge sees by opening an index directory. | Yes, but it is baked into the on-disk format: the loader looks for this exact name, so renaming it invalidates every existing index and requires a full reindex. **Decision: leave it for this cycle**; see [Schema.md §14.6](Schema.md#146-sparsebm25s). |
 
-Any other occurrence of `prism` — in a module path, an import, a CLI invocation, an env var, an
-exception class, or a directory name — is unpropagated rename residue and is a defect.
+Any occurrence of `prism` **outside this table** — in a module path, an import, a CLI invocation,
+an env var, an exception class, or an index directory name — is unpropagated rename residue and is
+a defect. As of 2026-09-23 there are none: `src/` contains no `Prism*` identifier, no `PRISM_` env
+var and no `.prism` path, and the documentation suite's remaining mentions are all corrective prose
+recording what was changed.
 
 ## 1. Runtime & Toolchain (LOCKED)
 

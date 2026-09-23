@@ -1,0 +1,18 @@
+{
+  "question": "OQ-11",
+  "corpus": "generated 3-version JS corpus",
+  "encoder": "sentence-transformers/all-MiniLM-L6-v2",
+  "configured_threshold": 0.95,
+  "same_pairs": 299,
+  "diff_pairs": 45454,
+  "same_min": 0.9414315223693848,
+  "same_p05": 0.9674270808696747,
+  "same_median": 0.9923826456069946,
+  "diff_median": 0.42915305495262146,
+  "diff_p95": 0.794952455163002,
+  "diff_max": 0.9980417490005493,
+  "missed_at_threshold": 3,
+  "merged_at_threshold": 10,
+  "min_error_threshold": 0.95,
+  "caveat": "Synthetic corpus; real repos have messier edits. Indicative, not final."
+}

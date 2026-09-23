@@ -106,8 +106,10 @@ ENV PYTHONUNBUFFERED=1 \
     CUDA_VISIBLE_DEVICES="" \
     UV_PROJECT_ENVIRONMENT=/app/.venv \
     HF_HOME=/app/data/hf \
-    AXIOM_INDEX_ROOT=/app/.axiom \
-    AXIOM_DATA_ROOT=/app/data
+    AXIOM_INDEX_ROOT=/app/.axiom
+# NOTE: AXIOM_DATA_ROOT is deliberately absent -- it is NOT implemented (no code reads it,
+# see Setup.md section 7.1). Model and dataset paths resolve relative to WORKDIR, so the
+# image must keep /app as its working directory for data/models/... to be found.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential curl \
@@ -310,12 +312,14 @@ grep -c PLACEHOLDER appsretrieval_results.json || true   # expect: no match
 # 3. Log the run in the experiment log (TestPlan.md §6.4 / Tracker.md §5)
 #    BEFORE tagging, so the tag's commit and the logged row agree.
 #
-#    TRAP: .gitignore ignores BOTH `data/` and `appsretrieval_results.json`,
-#    so without the negations listed in Rules.md §9.5 this `git add` adds
-#    NOTHING and `git commit` fails with "nothing to commit" -- on the one day
-#    nobody has the attention to notice. Verify before relying on it:
-git check-ignore -v data/experiments.csv appsretrieval_results.json   # must print nothing
-git add data/experiments.csv appsretrieval_results.json
+#    TRAP (resolved 2026-09-23, but verify anyway): .gitignore used to ignore
+#    BOTH `data/` and `appsretrieval_results.json`, so this `git add` added
+#    NOTHING and `git commit` failed with "nothing to commit" -- on the one day
+#    nobody has the attention to notice. Two changes fixed it: the experiment
+#    log moved to `artifacts/` (not ignored), and `.gitignore` now carries an
+#    explicit `!appsretrieval_results.json`. Verify before relying on it:
+git check-ignore -v artifacts/experiments.csv appsretrieval_results.json   # must print nothing
+git add artifacts/experiments.csv appsretrieval_results.json
 git status --porcelain                                                # must list both
 git commit -m "eval: final reportable run for submission"
 

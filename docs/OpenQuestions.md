@@ -211,9 +211,12 @@ a global one.**
 
 **The rule now, with no exceptions and no transition period:** the name is **Axiom**. Package and
 import root `axiom`, CLI entrypoint `axiom`, env prefix `AXIOM_`, index root `.axiom/`, exception
-base `AxiomError`, schema base `AxiomModel`. Three things keep the word PRISM and only three: the
-organiser-prescribed release tag `PRISM_GENAI_HACKATHON_Y2026`, the event name "Samsung PRISM GenAI
-Hackathon", and the rival's repository URL.
+base `AxiomError`, schema base `AxiomModel`. Five literals keep the word PRISM — the organiser-prescribed
+release tag `PRISM_GENAI_HACKATHON_Y2026`, the event name "Samsung PRISM GenAI Hackathon", the
+rival's repository URL, **our own repository URL** (`Samsung-Prism-Hack`) and
+**`sparse.bm25s/prism_meta.json`** on disk. The complete, authoritative list with the reasoning for
+each is [`_CONTRACT.md §0`](_CONTRACT.md#0-identity); earlier revisions of this
+answer said "three" and missed the last two.
 
 `_CONTRACT.md §0/§1/§3` carried `prism` / `PRISM_` until 2026-09-23 and **has since been corrected**
 to match the other twenty-one docs and all of `src/`, notwithstanding its own "if a doc contradicts

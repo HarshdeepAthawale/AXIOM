@@ -249,6 +249,19 @@ def _mteb_version() -> str | None:
     return str(getattr(mteb, "__version__", "unknown"))
 
 
+#: Placeholders that a BEIR-shaped retrieval eval provably cannot read.
+#: ``corpus_to_chunks`` turns one document into exactly one chunk -- APPS entries
+#: are standalone single-file solutions -- so the AST chunker and its token
+#: bounds never run here. Excluding them keeps the AP-14 banner about constants
+#: that could actually move this number; a guard that cries wolf gets ignored,
+#: which is the failure mode AP-14 is trying to prevent.
+UNREACHABLE_IN_RETRIEVAL_EVAL = (
+    "chunk_min_tokens",
+    "chunk_target_tokens",
+    "chunk_min_target_tokens",
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the evaluation and write the results file. Returns a process exit code."""
     args = build_parser().parse_args(argv)
@@ -259,7 +272,9 @@ def main(argv: list[str] | None = None) -> int:
     started_at = datetime.now(UTC)
     wall_start = time.perf_counter()
 
-    placeholders = settings.active_placeholders()
+    placeholders = [
+        name for name in settings.active_placeholders() if name not in UNREACHABLE_IN_RETRIEVAL_EVAL
+    ]
     if placeholders:
         print(
             "PLACEHOLDER WARNING (Rules.md AP-14): "
@@ -379,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
             ),
             "config_hash": _config_hash(settings),
             "placeholders_active": placeholders,
+            "placeholders_excluded_as_unreachable": list(UNREACHABLE_IN_RETRIEVAL_EVAL),
+            "placeholders_all": settings.all_placeholders(),
             "models": {
                 "embedding_model": settings.embedding_model,
                 "embedding_dim": settings.embedding_dim,

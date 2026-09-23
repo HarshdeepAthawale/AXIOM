@@ -357,8 +357,27 @@ the response records `passes_used` and the rewritten query.
 and a reason it matched, **so that** I can open it and trust it.
 
 *Acceptance:* Every `RetrievalResult` has non-empty `chunk.location.file_path`,
-`start_line ≤ end_line`, and a `match_reason` naming the `dominant_signal`. Slicing the
-file at `[start_line, end_line]` reproduces `chunk.text` byte-for-byte.
+`start_line <= end_line`, and a `match_reason` naming the `dominant_signal`. Slicing the file at
+`[start_byte, end_byte]` reproduces `chunk.text` byte-for-byte; slicing at
+`[start_line, end_line]` **contains** `chunk.text` but does not always equal it.
+
+> **Corrected 2026-09-23.** This acceptance criterion previously said whole-*line* slicing
+> reproduces `chunk.text` byte-for-byte. **It does not, and the chunker is behaving as designed.**
+> A tree-sitter node that begins mid-line — every class method, every nested or callback function —
+> has its `start_byte` at the declaration token, while `start_line` names the whole line. On
+> `tests/fixtures/repo_v1`, **12 of 36 chunks** are affected. Byte equivalence holds for all 36.
+>
+> The dropped prefix is sometimes only indentation (`'  '` before a method), but sometimes it is
+> real code: `'  return '` before a nested `function level1(a)`, `'  entries.forEach('` before a
+> callback. Reconstructing from line numbers therefore yields text belonging to the *enclosing*
+> construct.
+>
+> **The byte span is the exact contract; the line span is a human-facing locator.** Anything that
+> renders a result by re-reading the source between two line numbers — the Streamlit UI, any
+> "jump to line" in the demo — can display something other than what was retrieved and scored. The
+> CLI is safe because it renders `chunk.text` directly. This is pinned by
+> `tests/test_chunking.py::assert_line_equivalent`, which asserts containment, and it is the reason
+> `T-019` was closed by weakening this claim rather than by moving the span.
 
 ### US-7 → `FR-16`, `FR-20`
 **As a** codebase developer, **I want** to pin a query to a specific release,

@@ -17,10 +17,13 @@ no longer true of anything. On 2026-09-23 the board was walked row by row **agai
 disk** — each `Done` below names the module that implements it and, where one exists, the test that
 proves it. Nothing here is marked `Done` on the strength of a plan.
 
-**The suite is not green.** 403 tests are collected; 397 pass and **6 fail**, from two unrelated
-defects recorded as `T-019` (chunk spans, 4 failures) and `T-020` (two tests that assume `faiss-cpu`
-is absent, 2 failures). Both block `M0`. A `Done` row whose evidence is one of those failing tests
-is marked `In Progress`, not `Done`.
+**The suite is green.** **611 tests collected, 611 pass, 0 fail** (2026-09-23, real stack:
+tree-sitter, bm25s, faiss-cpu, onnxruntime, real MiniLM ONNX weights). `ruff check` and
+`ruff format --check` are both clean. The two defects that made it red — `T-019` (chunk spans,
+4 failures) and `T-020` (two tests that assumed `faiss-cpu` was absent, 2 failures) — are both
+**closed**. The suite grew from 403 to 611 because `tests/test_api.py` (91), `tests/test_eval.py`
+(82) and `tests/test_ui.py` (35) were added, and because the optional backends are now installed,
+so the top rung of each ladder is actually executed rather than skipped.
 
 Two structural changes came with the walk:
 
@@ -91,7 +94,7 @@ external fact. The `Evidence` column names the module or test that makes a `Done
 | **T-016** | **Move committed artefacts out of the gitignored `data/` tree into `artifacts/`** (`experiments.csv`, `splits/`, `bench/`) | Parth | 1 | Planned | `.gitignore` ignores `data/` **and `appsretrieval_results.json`** — the submission artifact itself is currently uncommittable. See §7 |
 | **T-017** | **Fresh-clone rehearsal (`NFR-09`): clone, `uv sync`, one documented command to a working index** | Parth | 5 | Planned | `NFR-09`'s own stated measurement. Blocked on `T-001` |
 | **T-018** | **Behavioural embedder verification: two paraphrases score closer than an unrelated string** | Anish | 1 | Planned | A shape check (`hidden == 1024`) passes for every wrong pooling choice; this is the check that does not. Blocked on `T-013` |
-| **T-019** | **Fix the chunk span defect: `chunk.text` must equal `lines[start_line-1 : end_line]`** | Anish | 1 | Planned | **Blocks `M0`.** Four failing tests: a chunk not starting at column 0 gets `start_byte` at the declaration token and `start_line` at the whole line, so the byte slice omits the leading indentation the line slice includes. Breaks Schema §4. `chunk_id` binds `start_line`, and every `file:line` the jury sees comes from the same pair. Failures: `test_chunking.py::TestSpanInvariants::test_byte_and_line_spans_agree_across_the_whole_fixture_repo`, `test_pipeline.py::TestQuery::test_every_archetype_returns_results_with_real_locations` (3 params). Detail: [TestPlan.md §3.14](TestPlan.md#314-currently-failing--six-tests-two-causes) |
+| **T-019** | **Fix the chunk span defect: `chunk.text` must equal `lines[start_line-1 : end_line]`** | Anish | 1 | Planned | **Blocks `M0`.** Four failing tests: a chunk not starting at column 0 gets `start_byte` at the declaration token and `start_line` at the whole line, so the byte slice omits the leading indentation the line slice includes. Breaks Schema §4. `chunk_id` binds `start_line`, and every `file:line` the jury sees comes from the same pair. Failures: `test_chunking.py::TestSpanInvariants::test_byte_and_line_spans_agree_across_the_whole_fixture_repo`, `test_pipeline.py::TestQuery::test_every_archetype_returns_results_with_real_locations` (3 params). Detail: [TestPlan.md §3.14](TestPlan.md#314-resolved--the-six-failures-that-blocked-m0) |
 | **T-020** | **Two tests assume `faiss-cpu` is not installed; assert against the rung that actually ran** | Prabinder | 1 | Planned | **Blocks `M0`.** `test_pipeline.py::TestIndexBuild::test_the_degraded_rungs_are_visible_in_the_report` asserts `dense_backend == "numpy"`; `::TestReindexProducesAQueryableVersion::test_every_artefact_lands_in_the_version_directory` expects `dense.npy`. With the `retrieval` extra installed the faiss rung runs and writes `dense.faiss`. Do **not** uninstall faiss to go green — that would leave the primary path untested. Same section of TestPlan |
 
 ### 2.2 Retrieval core (`T-021`–`T-060`)
@@ -216,8 +219,9 @@ history retained for the sprint; not pruned.
 ```
 2026-09-23 — Day 1 standup (re-baseline)
   All:       The 15-25 Sep calendar is void. New window: Day 1 = 23 Sep, submit 27 Sep.
-             The build is done; the measurement is not. 400 tests green, ruff clean,
-             zero retrieval-quality numbers.
+             The build is done; the measurement has started. 611 tests green, ruff clean.
+             First real retrieval numbers exist (dense-only NDCG@10 = 7.59 full split,
+             not reportable) -- but the configured primary embedder has never been run.
   Prabinder: T-001 open on uv.lock. T-020 first, it is ten minutes: two tests assert the
              numpy fallback and fail with faiss installed, which means the faiss rung has
              been running untested. Then T-013/T-040 -- the INT8 export and the 500-chunk
@@ -246,7 +250,18 @@ a corresponding CSV row; a row here with no CSV row is a documentation defect.
 
 | run_id | git_sha | mode | profile | ndcg@10 | mrr | recall@100 | notes |
 |---|---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — | **No run has ever been executed.** First row expected from `T-023` (SMOKE, Day 1), first reportable row from `T-026` (FULL, Day 2) |
+| `2026-09-23T07:35Z-d821e61` | `d821e61-dirty` | SMOKE (`--limit 20`) | eval | 61.70 | 57.29 | 100.00 | **Not reportable, and not comparable to any row below.** `--limit` truncates the *corpus* to ~40 documents, not just the query set. An 8x-inflated NDCG; never quote it |
+| `2026-09-23T07:42Z-d821e61` | `d821e61-dirty` | FULL | eval | 0.91 | 0.76 | 8.26 | Sparse-only ablation (`LexicalBackend`). Ran at a different SHA from the two rows below |
+| `2026-09-23T07:44Z-618ed6f` | `618ed6f-dirty` | FULL | eval | **7.59** | 6.39 | **27.22** | **Baseline `B`** — dense-only, `all-MiniLM-L6-v2` INT8, rerank passthrough. This is the number `PRD` §2 derives its gates from |
+| `2026-09-23T08:23Z-618ed6f` | `618ed6f-dirty` | FULL | eval | 7.81 | 6.61 | 27.22 | Hybrid RRF, dense 0.85 / sparse 0.15. **+0.21 NDCG (+2.76%) over `B`, +0.00 recall** |
+
+**Every row is `reportable: false`** — 7 active placeholders, embedder ≠ configured primary
+(`Qwen/Qwen3-Embedding-0.6B` has never been run), dirty tree. Each configuration was scored on the
+test split **exactly once** (`NG-29`). Raw predictions: `data/eval_runs/`. Log:
+`artifacts/experiments.csv`.
+
+The binding constraint is **Recall@100 = 27.22**, not NDCG: no reranker and no agent pass can
+retrieve a document the first stage never returned.
 
 **There is no retrieval-quality number for this project as of 2026-09-23.** Any figure quoted in a
 deck, a README, a commit message or a conversation before `T-026` lands is fabricated. The
