@@ -1,9 +1,9 @@
 # Application Flow
 
-Eight end-to-end runtime flows through PRISM: sequence diagrams, stage-by-stage module traces, latency budgets, and the degradation rungs each flow exercises on its unhappy path.
+Eight end-to-end runtime flows through Axiom: sequence diagrams, stage-by-stage module traces, latency budgets, and the degradation rungs each flow exercises on its unhappy path.
 
 **Owner:** Harshdeep Athawale
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [Design.md](Design.md) · [TechSpecifications.md](TechSpecifications.md) · [Schema.md](Schema.md) · [PRD.md](PRD.md) · [TestPlan.md](TestPlan.md) · [Rules.md](Rules.md) · [NonGoals.md](NonGoals.md)
@@ -19,9 +19,15 @@ across [Design.md](Design.md) — if a flow skips a stage or takes a fallback ru
 explicitly rather than silently omitted, so the eight flows read as one system observed from eight
 angles, not eight unrelated diagrams.
 
-Latency numbers are the canonical budget breakdown from
-[NonGoals.md NG-10](NonGoals.md#ng-10--no-production-sla-uptime-or-ha-guarantee) unless a flow states
-otherwise; they are engineering budgets, not promises, per that same entry. Schema objects named on
+**Every latency figure in this document is a `# PLACEHOLDER` projection, not a measurement.** No
+run has produced any of them. They are carried through from
+[TechSpecifications.md §8](TechSpecifications.md#8-latency-and-memory-budget-placeholder-unmeasured),
+which shows the arithmetic and names the owning `OQ-13`/`OQ-14`/`OQ-15`. The word "measured" has
+been removed from every one of them. In particular the previously-stated **768 ms p50**, the
+**620 ms** rerank line and the **132 ms of headroom** are **retracted**: the 620 ms was
+`ms-marco-MiniLM-L-6-v2`'s figure written against `bge-reranker-v2-m3`'s row, off by ~25x
+(TechSpecifications.md §8.1). Per [Rules.md §8](Rules.md#8-the-placeholder-convention) none of these
+numbers may be quoted in a slide, a README, or a reported score until its measurement closes. Schema objects named on
 each arrow (`QueryPlan`, `ScoredChunk`, `FusedResult`, `RetrievalResult`, `Chunk`,
 `VersionManifest`, `SnippetFamily`) are defined normatively in [Schema.md](Schema.md).
 
@@ -73,16 +79,21 @@ prior `.axiom/` state. Exercises the offline path in [Design.md §3.2](Design.md
 | 5 | `indexing.structural:build_index` | `structural.sqlite` | Skipped entirely under the `eval` profile — see [Design.md §7](Design.md#7-two-profiles-one-pipeline) |
 | 6 | `indexing.manifest:write` | `manifest.json`, `registry.json` | Atomic write via `index/<version>.tmp/` + `os.replace`, per `TC-034` |
 
-**Budget:** `NFR-01`, ≤ 12 minutes for 10,000 chunks on the 8-core / 16 GB reference box. Dense
-embedding dominates wall clock; sparse and structural build concurrently with each other but after
-chunking completes (both need the full `list[Chunk]`, not a streaming subset).
+**Budget:** `NFR-01`, ≤ 12 minutes for 10,000 chunks on the 8-core / 16 GB reference box — a
+*requirement*, **unmeasured, and projected to be missed by 1.7–3.3x** with the locked embedder:
+[TechSpecifications.md §8.5](TechSpecifications.md#85-cold-index-placeholder-oq-14) shows the run
+needs ~3.24 TOPS sustained against a ~5.1 TOPS theoretical peak, which puts the honest projection at
+20–40 min. NonGoals.md NG-07's "cold index is measured at 636 s" is **retracted** — no such run
+exists. Tracked as `OQ-14`; the first Day-1 action is to export one INT8 artifact and time 500 real
+chunks. Dense embedding dominates wall clock; sparse and structural build concurrently with each
+other but after chunking completes (both need the full `list[Chunk]`, not a streaming subset).
 
 **Degradation rungs exercised on the unhappy path:** a syntactically broken file falls back to the
 regex identifier splitter at step 2 (`TC-021`); this does not fail the whole index. A file that
 cannot be read at all (permissions, encoding) is skipped with a `WARNING`, not fatal. Step 6's
 manifest write is one of the three cases where raising *is* correct
 ([Design.md §6.3](Design.md#63-where-raising-is-still-correct)) — a partially-written index tree at
-process end is a `PrismIndexError` state the next load must refuse, not silently tolerate.
+process end is a `IndexNotFoundError` state the next load must refuse, not silently tolerate.
 
 ---
 
@@ -117,22 +128,35 @@ exactly.
    │<──────────────────────────────────────────────────────────────────────────────────────list[RetrievalResult]───────│
 ```
 
-| Step | Module : function | Latency contribution | Cumulative |
-|---|---|---|---|
-| 1 | `agent.classifier:classify` | 60 ms | 60 ms |
-| 2 | `agent.planner:build_plan` → `QueryPlan` (includes query embedding for the dense leg) | 35 ms | 95 ms |
-| 3 | `retrieval.dense:search` + `retrieval.sparse:search` + `retrieval.structural:search`, concurrent (§5.1 of [Design.md](Design.md#51-why-the-three-signals-run-concurrently-not-in-a-process-pool)) | 28 ms (wall clock of the slowest of the three, not the sum) | 123 ms |
-| 4 | `retrieval.fusion:reciprocal_rank_fusion` → `list[FusedResult]`, N=25 | 3 ms | 126 ms |
-| 5 | Hydrate: resolve the 25 `FusedResult.chunk_id`s to full `Chunk` bodies for the reranker | 12 ms | 138 ms |
-| 6 | `rerank.cross_encoder:rerank`, one batched call over 25 pairs | 620 ms | 758 ms |
-| 7 | `agent.evaluator:assess_sufficiency` → sufficient, no refinement pass | included in step 6's return | 758 ms |
-| 8 | formatter → `list[RetrievalResult]`, top 10 | 10 ms | **768 ms** |
+Stage names in the "ledger tag" column are the `TimingLedger` tags the code actually emits
+(`core/timing.py`), which is what `NFR-10`'s `--json` `timings` block contains. Classification has
+no tag of its own — it happens inside `plan`.
 
-**Budget:** `NFR-03`, ≤ 900 ms p50. 768 ms measured leaves **132 ms of headroom**. The reranker (step
-6) is overwhelmingly the dominant cost at 620 of 768 ms — this is why
-[TechSpecifications.md](TechSpecifications.md) treats reranker throughput as the single highest-value
-latency optimisation target, and why `AXIOM_RERANKER_ENABLED=false` (skip Stage 4 entirely) is the
-fastest available ablation for isolating a regression elsewhere in the pipeline.
+| Step | Module : function | Ledger tag | Projected ms | Status |
+|---|---|---|---|---|
+| 1–2 | `agent.classifier:classify` + `agent.planner:build_plan` → `QueryPlan` (includes the query embedding for the dense leg) | `plan` | 95 | `# PLACEHOLDER`, `OQ-14` |
+| 3 | `retrieval.dense:search` + `retrieval.sparse:search` + `retrieval.structural:search`, concurrent (§5.1 of [Design.md](Design.md#51-why-the-three-signals-run-concurrently-not-in-a-process-pool)) | `agent.fan_out` | 28 (wall clock of the slowest of the three, not the sum) | `# PLACEHOLDER` |
+| 4 | `retrieval.fusion:reciprocal_rank_fusion` → `list[FusedResult]`, N=25 | `fuse` | 3 | estimated — pure integer arithmetic, the one line not model-bound |
+| 5 | Hydrate: resolve the 25 `FusedResult.chunk_id`s to full `Chunk` bodies for the reranker | `hydrate` | 12 | `# PLACEHOLDER` |
+| 6 | `rerank.cross_encoder:rerank`, one batched call over 25 pairs, **`demo`/`default` profile (MiniLM)** | `rerank` | 160–620 | `# PLACEHOLDER`, `OQ-13` |
+| 7 | `agent.evaluator:is_sufficient` → sufficient, no refinement pass | (inside step 6's return) | ~1 | `# PLACEHOLDER` |
+| 8 | formatter → `list[RetrievalResult]`, top 10 | (untagged) | 10 | `# PLACEHOLDER` |
+| | **Projected total** | | **~310–770** | **projection, not a p50** |
+
+**Budget:** `NFR-03`, ≤ 900 ms p50 — a *requirement*, against which nothing has yet been measured.
+The projection above is the `demo`/`default` profile with `AXIOM_LLM_ENABLED=false`; step 6 uses
+`cross-encoder/ms-marco-MiniLM-L-6-v2`, which is the primary reranker on this profile
+([TechSpecifications.md §3.2](TechSpecifications.md#32-cross-encoder-reranker)). Under
+`configs/eval.yaml`, step 6 is `bge-reranker-v2-m3` over 5 pairs and is **seconds, not
+milliseconds** — that profile is offline and untimed and **no latency number from it may be quoted
+against `NFR-03`**.
+
+The reranker is the dominant cost under every assumption, which is why
+[TechSpecifications.md](TechSpecifications.md) treats reranker throughput as the single
+highest-value latency optimisation target, and why `AXIOM_RERANKER_ENABLED=false` (skip Stage 4
+entirely) is the fastest available ablation for isolating a regression elsewhere in the pipeline.
+The retracted claim that this flow costs "768 ms measured" with "132 ms of headroom" is addressed in
+[TechSpecifications.md §8.1](TechSpecifications.md#81-why-the-reranker-line-was-wrong-the-arithmetic).
 
 **What flows on each arrow:** query text → `agent.classifier` → `QueryType` → `agent.planner` →
 `QueryPlan` → three parallel `list[ScoredChunk]` → `retrieval.fusion` → `list[FusedResult]` (25) →
@@ -170,25 +194,40 @@ refinement pass.
    │<─────────────────────────────────────────────────────────────────────────────────────────────────────────────list[RetrievalResult]────│
 ```
 
-| Step | Module : function | Latency | Cumulative |
-|---|---|---|---|
-| 1 | Pass 1: classify → plan → fan-out → fuse → rerank (identical to Flow 2, steps 1–6) | 758 ms | 758 ms |
-| 2 | `agent.evaluator:assess_sufficiency` → insufficient (top-1 `rerank_score` 0.22 < 0.35) | ~1 ms | 759 ms |
-| 3 | `agent.planner:refine` — widens `expansion_terms`, may add `sub_queries` (`FR-03`) | ~5 ms | 764 ms |
-| 4 | Pass 2: fan-out → fuse → rerank on the revised `QueryPlan` (query classification is *not* re-run; `query_type` is carried over) | ~700 ms (no re-classification step) | 1,464 ms |
-| 5 | `agent.evaluator:assess_sufficiency` → sufficient (top-1 now 0.61) | ~1 ms | 1,465 ms |
-| 6 | formatter → `list[RetrievalResult]` | 10 ms | **~1.48 s** |
+**Pass semantics.** `AXIOM_AGENT_MAX_PASSES=2` bounds the **total** number of
+retrieve → fuse → hydrate → rerank cycles, *initial pass included* — two cycles, at most one
+refinement, never three. This is what `agent/loop.py:run` implements; see
+[TechSpecifications.md §5.3](TechSpecifications.md#53-agent-loop-bound) for the transcribed loop.
 
-**Budget:** `NFR-04`, ≤ 5 s p95 with up to 2 passes. A two-pass query at ~1.5 s sits comfortably
-inside budget; the 5 s ceiling is sized for the worst case (large candidate hydration, cold model
-cache, slower hardware than the reference box), not the typical two-pass cost shown here.
+| Step | Module : function | Projected ms | Status |
+|---|---|---|---|
+| 1 | **Pass 1** (the initial retrieval, and one of the two): `plan` → `agent.fan_out` → `fuse` → `hydrate` → `rerank`, identical to Flow 2 steps 1–6 | ~310–770 | `# PLACEHOLDER` |
+| 2 | `agent.evaluator:is_sufficient` → insufficient (top-1 `rerank_score` 0.22 < 0.35) | ~1 | `# PLACEHOLDER` |
+| 3 | `agent.planner:next_plan` — widens `expansion_terms`, may add `sub_queries` (`FR-03`, ≤ 3) | ~5 | `# PLACEHOLDER` |
+| 4 | **Pass 2** (the one refinement): `agent.fan_out` → `fuse` → `hydrate` → `rerank` on the revised `QueryPlan`. Classification and planning are **not** re-run; `query_type` and `original_query` are carried over verbatim | ~250–700 | `# PLACEHOLDER` |
+| 5 | `agent.evaluator:is_sufficient` → sufficient (top-1 now 0.61), `stop_reason="sufficient"` | ~1 | `# PLACEHOLDER` |
+| 6 | formatter → `list[RetrievalResult]` | 10 | `# PLACEHOLDER` |
+| | **Projected total** | **~580–1,490** | **projection, not a p95** |
+
+**Budget:** `NFR-04`, ≤ 5 s p95 with up to 2 **total** passes — a requirement, unmeasured. The 5 s
+ceiling is enforced by a monotonic deadline, not by the projection above: it is sized for the worst
+case (large candidate hydration, cold model cache, slower hardware than the reference box). Note the
+projection is *not* 2x Flow 2, because classification and planning are paid once.
+
+**Where the deadline is checked** (`agent/loop.py`): before starting pass 2, again before pass 2's
+rerank (the reranker is ~80% of a pass's cost, so abandoning a doomed pass *before* it is strictly
+better — `TC-088`), and after pass 1 completes. **Pass 1 is exempt from every check**: a query must
+return something even under an already-exhausted budget.
 
 **What differs from Flow 2:** the loop carries the `QueryPlan.original_query` unchanged across
 passes ([Schema.md §10](Schema.md#10-queryplan): "identical across all passes of one request") while
 `sub_queries`, `extracted_identifiers`, and `expansion_terms` are revised by `agent.planner:refine`.
-`best` tracks the higher-scoring of the two passes' results (§5.2 of
+`best` tracks the better of the two passes (§5.2 of
 [Design.md](Design.md#52-how-the-agent-loop-composes-with-the-fan-out)) — pass 2 is not assumed
-better by construction, only preferred if it measurably is.
+better by construction, only preferred if it measurably is. "Better" is the key
+`(calibrated, top1)`: a pass whose cross-encoder actually ran outranks one that degraded to
+passthrough, because an RRF score (~0.016) and a cross-encoder score (~0.71) are not the same
+quantity; only within the same rung does raw top-1 decide.
 
 **Degradation rungs exercised on the unhappy path:** if pass 2's rewrite is byte-identical to pass
 1's (the planner has nothing new to try), the loop stops early with `stop_reason="no_new_query"`
@@ -223,13 +262,14 @@ requirement, not a runtime failure — this is a deliberately selected mode, not
 | Step | Module : function | Behaviour under `AXIOM_LLM_ENABLED=false` |
 |---|---|---|
 | 1 | `agent.classifier:classify` | Heuristic rule engine (identifier/keyword regexes) instead of LLM classification. This is rung 2 of the classifier's declared ladder in [Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade), selected deliberately rather than reached by failure |
-| 2 | `agent.planner:build_plan` | `sub_queries` defaults to `[original_query]` — decomposition (`FR-03`) is an LLM-only capability with no heuristic equivalent, so it is simply not attempted, not degraded-and-retried |
+| 2 | `agent.planner:build_plan` | `sub_queries` stays **empty** (`[]`). It is *never* filled with `[original_query]`; `QueryPlan.effective_queries` is the derived property that yields `[original_query]` when `sub_queries` is empty ([TechSpecifications.md §5.1.4](TechSpecifications.md#514-sub-query-fan-out-and-its-fusion-arithmetic)). The heuristic decomposer in `agent/planner.py:decompose` does run and may produce up to 3 sub-queries without the LLM; the LLM only supplements it. |
 | 3 | `agent.evaluator:assess_sufficiency` | Unaffected — sufficiency is judged from rerank scores, never from the LLM (`NG-23`), so this stage behaves identically whether the LLM is on or off |
 | 4 | Stages 2–4, 6 | Identical to Flow 2 — the LLM never participates in retrieval, fusion, or reranking regardless of `AXIOM_LLM_ENABLED` |
 
 **Budget:** Typically *faster* than Flow 2, not slower — no LLM inference call is on the critical
-path. [Setup.md §8 Rung 5](Setup.md#rung-5--smoke-search-returning-ranked-results-2-s) shows a
-measured 214 ms with both the LLM and the reranker disabled, versus 712 ms with both enabled.
+path. Setup.md §8 Rung 5's "214 ms with both the LLM and the reranker disabled, versus 712 ms with
+both enabled" is a `# PLACEHOLDER` pair, not a measurement (`OQ-13`); it is quoted here only for the
+*direction* of the effect, which is certain, not the magnitude, which is not.
 
 **Test coverage:** `TC-067` — asserts `FakeLLM.call_count == 0` for the full pipeline under this
 flag, and that all three archetype queries still return well-formed, non-empty results.
@@ -268,8 +308,17 @@ repository. Exercises `FR-18`/`FR-19` and the `NFR-02` budget.
 | 4 | `indexing.*:build_index` (incremental mode) | updated `dense.faiss`, `sparse.bm25s/`, `structural.sqlite` | D-file chunks are dropped from all three indexes; structural graph edges are updated only for touched files |
 | 5 | `indexing.manifest:write` | new `manifest.json` with `parent_version` set | Forms the version chain `versioning.evolutionary` later walks (Flow 7) |
 
-**Budget:** `NFR-02`, ≤ 45 s for a 50-changed-file diff, versus the ~12-minute full-rebuild budget
-(`NFR-01`) for the same corpus size — the entire point of `FR-18`/`FR-19`.
+**Budget:** `NFR-02`, ≤ 45 s for a 50-changed-file diff, versus the full-rebuild budget (`NFR-01`)
+for the same corpus size — the entire point of `FR-18`/`FR-19`. Both figures are `# PLACEHOLDER`
+(`OQ-14`).
+
+**Where the 50-file diff comes from.** The demo corpus is a *small* tagged JavaScript repo
+(≈10–50 source files, ≥3 tags — `OQ-07`), which cannot itself produce a 50-changed-file diff. `NFR-02`
+is therefore measured on the **synthetic diff generator** in `TestPlan.md §5.4`, which emits a
+controlled A/M/D/R changeset of a stated size against a generated corpus. The live demo shows the
+*mechanism* on the real repo (a handful of changed files, a real rename, a real deletion); the
+*number* comes from the generator, and the two are reported separately and labelled as such. There
+is no 10k-file demo repo — see [PRD.md §2.2](PRD.md#22-two-evaluation-contexts-two-profiles).
 
 **Degradation rungs exercised on the unhappy path:** if `git diff` fails (not a git repo, or a
 corrupted `.git`), `versioning.incremental:reindex` falls back to whole-file-hash comparison against
@@ -387,12 +436,12 @@ abstract description of a Stage-4 degradation concrete, end to end, on one examp
    │        (classify/plan/fan-out/fuse -> 25 FusedResult, RRF order, rrf_score set)            │
    │              │─────────────────────────────────>│                       │                │
    │              │                            _ensure_session() raises      │                │
-   │              │                            PrismModelError                │                │
+   │              │                            a model-load exception                │                │
    │              │                            (ONNX session construction    │                │
    │              │                             fails: corrupt cache /       │                │
    │              │                             OOM / missing artefact)      │                │
    │              │                            WARNING logged: stage=rerank, │                │
-   │              │                            reason=PrismModelError         │                │
+   │              │                            reason=a model-load exception         │                │
    │              │                            degradation counter += 1      │                │
    │              │                            -> pass RRF order through    │                │
    │              │                               unchanged, rerank_score=None│                │
@@ -414,13 +463,13 @@ abstract description of a Stage-4 degradation concrete, end to end, on one examp
 | Step | Module : function | Behaviour |
 |---|---|---|
 | 1 | Stages 1–3 (classify, plan, fan-out, fuse) | Identical to Flow 2 — the failure has not happened yet; `list[FusedResult]` with `rrf_score` set, `rerank_score=None` (unset), top N=25 |
-| 2 | `rerank.cross_encoder:rerank` | `_ensure_session()` raises `PrismModelError` on ONNX session construction. Caught inside the reranker stage, per [Rules.md AP-04](Rules.md#ap-04--silent-exception-swallowing-rule-3)'s pattern: `WARNING` logged naming `stage="rerank"` and the exception type, the run's degradation counter incremented, never silently swallowed |
+| 2 | `rerank.cross_encoder:rerank` | `_ensure_session()` raises `a model-load exception` on ONNX session construction. Caught inside the reranker stage, per [Rules.md AP-04](Rules.md#ap-04--silent-exception-swallowing-rule-3)'s pattern: `WARNING` logged naming `stage="rerank"` and the exception type, the run's degradation counter incremented, never silently swallowed |
 | 3 | Degradation rung | RRF order passed through unchanged. Every `FusedResult.rerank_score` stays `None`; ordering is by `rrf_score` via `final_score` ([Schema.md §8](Schema.md#8-fusedresult): "`final_score` is `rrf_score` when `rerank_score` is `None`") |
 | 4 | `agent.evaluator:assess_sufficiency` | Falls back to the **RRF-score predicate** rather than the rerank-score predicate — [Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade)'s "Sufficiency check" row names exactly this rung, and specifies it must "declare sufficient" rather than loop blindly, since an RRF-based predicate has no principled way to trigger a rewrite that a rerank-based one would have |
 | 5 | formatter | Every `RetrievalResult.match_reason` states `"rerank_passthrough"` so the degradation is visible to the caller, not hidden behind a plausible-looking score — [Design.md §6.2](Design.md#62-why-degradation-composes-differently-depending-on-where-it-happens) |
 
-**Budget impact:** *faster* than Flow 2, not slower — Stage 4's 620 ms (the dominant cost in the
-happy-path breakdown) is skipped entirely. A degraded query is cheap; it is simply less accurate,
+**Budget impact:** *faster* than Flow 2, not slower — Stage 4 (the dominant cost in the projected
+happy-path breakdown, whatever its true magnitude) is skipped entirely. A degraded query is cheap; it is simply less accurate,
 which is the honest trade [NonGoals.md NG-10](NonGoals.md#ng-10--no-production-sla-uptime-or-ha-guarantee)
 already states for the reranker-disabled ablation path.
 

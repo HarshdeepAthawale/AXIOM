@@ -1,10 +1,10 @@
 # Contributing
 
-Branch naming, commit conventions, the pre-review checklist, the ownership map, and the day-to-day dev loop for PRISM.
+Branch naming, commit conventions, the pre-review checklist, the ownership map, and the day-to-day dev loop for Axiom.
 
 **Owner:** Anish Grover
-**Last updated:** 2026-09-16
-**Status:** Draft
+**Last updated:** 2026-09-23
+**Status:** Active
 
 Related: [Rules.md](Rules.md) · [Setup.md](Setup.md) · [ImplementationPlan.md](ImplementationPlan.md) · [Schema.md](Schema.md) · [Tracker.md](Tracker.md) · [Decisions.md](Decisions.md) · [Changelog.md](Changelog.md) · [Glossary.md](Glossary.md)
 
@@ -15,9 +15,14 @@ Related: [Rules.md](Rules.md) · [Setup.md](Setup.md) · [ImplementationPlan.md]
 [Rules.md](Rules.md) states the binding engineering invariants and the reviewer-side checklist that
 enforces them. This document is the author-facing companion: how to structure your work so that
 checklist passes on the first look, and the mechanical process — branches, commits, PRs, recipes —
-that a four-person team needs written down once rather than re-negotiated every day of a 10-day
+that a four-person team needs written down once rather than re-negotiated every day of the
 sprint. Nothing here overrides [Rules.md](Rules.md); where the two could be read as disagreeing,
 [Rules.md](Rules.md) wins.
+
+**State as of 2026-09-23.** The implementation exists — `src/axiom/`, `scripts/` and `tests/`, with
+400 tests passing and `ruff` clean — so most of what follows is now about changing code rather than
+writing it for the first time. Two mechanics below describe artefacts that do not exist yet and are
+flagged inline: there is no `uv.lock` (`T-001`) and no CI workflow (`T-002`).
 
 ---
 
@@ -45,7 +50,7 @@ before anyone opens it, since it always needs the four-member sign-off in
 [§3](#3-pr-checklist) below.
 
 No `feature/`, `bugfix/`, `hotfix/` prefixes — the area already carries that information, and a
-10-day sprint with four people does not need a taxonomy built for a larger org.
+four-person sprint does not need a taxonomy built for a larger org.
 
 ---
 
@@ -89,13 +94,13 @@ is something else, because schema diffs are searched for specifically during rev
 read it, it is not reproduced here. This section is the same checklist run by the **author**,
 before requesting review, so that a reviewer's first pass finds nothing that a five-minute
 self-check would have caught. Run through [Rules.md §10](Rules.md#10-code-review-rules) items 1–10
-yourself, then answer these two PRISM-specific questions that the reviewer-side list assumes you
+yourself, then answer these two Axiom-specific questions that the reviewer-side list assumes you
 already asked:
 
 | Question | If yes |
 |---|---|
 | Is this PR `docs/`-only? | Self-merge is allowed per [Rules.md §10](Rules.md#10-code-review-rules) etiquette — no review wait required, but still open a normal PR so the change is visible in history. |
-| Does this PR touch `src/axiom/schema/`? | It needs **four-member sign-off**, not a single reviewer's approval — see [Rules.md §9.3](Rules.md#93-type-hints) item 5 ("Do not pass `dict[str, Any]` between stages — if a stage needs a new field, add it to Schema.md and the model, with the four-member sign-off that schema changes require"). This exists because a schema change is the one class of PR that can break all four workstreams simultaneously — see [ImplementationPlan.md `RISK-12`](ImplementationPlan.md#risk-12--a-late-schema-change-breaks-multiple-workstreams-at-once). Get the sign-off *before* merging, recorded as four approving reviews or four explicit comments on the PR, not after. |
+| Does this PR touch `src/axiom/schema/`? | It needs **four-member sign-off**, not a single reviewer's approval — see [Rules.md §9.3](Rules.md#93-type-hints) item 5 ("Do not pass `dict[str, Any]` between stages — if a stage needs a new field, add it to Schema.md and the model, with the four-member sign-off that schema changes require"). This exists because a schema change is the one class of PR that can break all four workstreams simultaneously — see `RISK-12` in [ImplementationPlan.md §5](ImplementationPlan.md#5-risk-register). Get the sign-off *before* merging, recorded as four approving reviews or four explicit comments on the PR, not after. |
 
 The full **"Blocks merge (no discussion, fix it)"** list — mutated `chunk_id`, hardcoded tunable,
 `except: pass`, `print` in `src/axiom/`, a CUDA reference, a failing test, a `mypy --strict` error in
@@ -108,16 +113,23 @@ final gate by reference.
 
 ## 4. Ownership map
 
-Summarised from [ImplementationPlan.md §2](ImplementationPlan.md#2-workstreams) — that table is
-authoritative; this is the quick-reference view plus the review pairing this document owns.
+**[PRD.md §5](PRD.md#5-functional-requirements)'s `Owner` column is authoritative.**
+[ImplementationPlan.md §2](ImplementationPlan.md#2-workstreams) is generated from it, and this table
+is the quick-reference view of that — regenerated 2026-09-23, when the three tables were found to
+disagree about who owns `FR-22`, `FR-23` and `FR-26`.
 
 | Workstream | Owner | Area |
 |---|---|---|
-| Retrieval core | Prabinder Singh | `indexing/dense.py`, `indexing/sparse.py`, `retrieval/dense.py`, `retrieval/sparse.py`, `retrieval/fusion.py`, `eval/` |
+| Retrieval core | Prabinder Singh | `indexing/dense.py`, `indexing/sparse.py`, `retrieval/dense.py`, `retrieval/sparse.py`, `retrieval/fusion.py`, `cli.py` (`FR-23`) |
 | Structural intelligence | Anish Grover | `chunking/`, `indexing/structural.py`, `retrieval/structural.py` |
-| Agentic orchestration + reranking + UI | Harshdeep Athawale | `agent/`, `rerank/`, `api/`, `ui/` |
-| Versioning + evaluation + submission | Parth Deshmukh | `versioning/`, release packaging |
+| Agentic orchestration + reranking + surfaces | Harshdeep Athawale | `agent/`, `rerank/`, `api/`, `ui/` |
+| Versioning + evaluation + submission | Parth Deshmukh | `versioning/`, `eval/`, `scripts/run_eval.py`, release packaging |
 | Cross-cutting (all four) | — | `schema/`, `core/`, `configs/`, `docs/` |
+
+The CLI sits with Prabinder rather than with the other surfaces because every milestone-gate command
+in [ImplementationPlan.md §3](ImplementationPlan.md#3-milestone-gates-m0m7) is a CLI invocation, and
+`FR-23` names him. The eval harness sits with Parth for the same reason in reverse: `FR-22` and
+`FR-26` are his, and he owns the unbroken chain from eval run to submitted form.
 
 ### 4.1 Cross-review pairing
 
@@ -146,7 +158,8 @@ The day-to-day cycle, every day of the sprint:
 2. **Branch** per [§1](#1-branch-naming).
 3. **Sync dependencies**: `uv sync --frozen` (see [Setup.md §4.1](Setup.md#41-primary-path--uv)). If
    `--frozen` fails, `uv.lock` and `pyproject.toml` have drifted on `main` — fix that first, in its
-   own PR, before starting feature work on top of a broken lock.
+   own PR, before starting feature work on top of a broken lock. **`uv.lock` does not exist yet**
+   (`T-001`); until it lands, `--frozen` cannot succeed and a plain `uv sync` is the interim step.
 4. **Make the change**, following [Rules.md](Rules.md) as you go rather than as a post-hoc check —
    the anti-pattern gallery in [Rules.md §11](Rules.md#11-anti-pattern-gallery) is written to be read
    *before* writing the code it warns about, not after a review comment.
@@ -154,14 +167,17 @@ The day-to-day cycle, every day of the sprint:
    five rungs (imports/native libs, package wiring, unit tests, smoke index, smoke search) are
    written as a fresh-clone setup check, but rungs 3–5 double as exactly the right local pre-push
    check for a change to any of `chunking/`, `indexing/`, `retrieval/`, `rerank/`, or `agent/` — run
-   `pytest -q tests/ -x --timeout=120` at minimum, and the smoke index/search rungs for anything that
-   touches the on-disk index format.
+   `pytest -q tests/ -x` at minimum (the full suite is a few seconds), and the smoke index/query
+   rungs for anything that touches the on-disk index format. Do not add `--timeout=`: it needs
+   `pytest-timeout`, which is not a declared dependency.
 6. **Open the PR**, running [§3](#3-pr-checklist) above yourself first.
 7. **Address review within 4 hours** during the sprint, per
    [Rules.md §10](Rules.md#10-code-review-rules) etiquette — say `blocking:` or `nit:` explicitly on
    every comment you leave as a reviewer, and resolve as the author; the reviewer closes.
 8. **Merge.** Squash or merge-commit, either is fine for this project size; what matters is that
-   `main` always passes CI stages 1–5 ([TestPlan.md §8](TestPlan.md#8-ci-pipeline)).
+   `main` always passes CI stages 1–5 ([TestPlan.md §8](TestPlan.md#8-ci-pipeline)) — which until
+   `T-002` lands means running them by hand: `ruff check . && ruff format --check .`, then
+   `mypy src/axiom/core src/axiom/retrieval src/axiom/schema`, then `pytest`.
 
 ---
 
@@ -173,7 +189,7 @@ A new functional requirement is scope growth, so it does not enter quietly:
    ([PRD.md §3](PRD.md#3-personas)) it's for.
 2. Get explicit sign-off — for a hackathon-scale team this can be a same-day Slack/standup
    confirmation, but it must be confirmed by more than the proposer alone, since every `FR-##`
-   competes for the same 10-day window as everything already committed in
+   competes for the same five-day window as everything already committed in
    [PRD.md §7](PRD.md#7-prioritisation-moscow).
 3. Add the `FR-##` to [PRD.md §5](PRD.md#5-functional-requirements) with an owner and a priority
    (`P0`/`P1`/`B`/`INF`), and slot it into the MoSCoW table and, if it's a Must-have, the cut-order
@@ -184,7 +200,8 @@ A new functional requirement is scope growth, so it does not enter quietly:
    requirement's `FR-##` owner, with a target day consistent with
    [ImplementationPlan.md §4](ImplementationPlan.md#4-day-by-day-plan)'s existing schedule — do not
    silently assume a new requirement is free; state which day it lands and what, if anything, it
-   displaces.
+   displaces. With a five-day window (Day 1 = 2026-09-23), the honest default answer to a new
+   `FR-##` is no.
 
 ---
 
@@ -208,8 +225,15 @@ per [Rules.md §7](Rules.md#7-configuration-discipline). Adding one:
    behaviour is indistinguishable from a field that does nothing.
 5. **Note it in [Changelog.md](Changelog.md)** if it changes default retrieval behaviour (a new flag
    defaulting to a value that changes what a query returns is a behaviour change even though it is
-   not a schema change — see [Changelog.md](Changelog.md#format) for the breaking/non-breaking
+   not a schema change — see
+   [Changelog.md §2](Changelog.md#2-what-counts-as-a-breaking-change) for the breaking/non-breaking
    distinction that applies here).
+
+6. **If the value is an unmeasured estimate, add it to
+   [Tracker.md §5.1](Tracker.md#51-placeholder-replacement-log)** as well as marking it
+   `# PLACEHOLDER`. The authoritative list is `axiom.config.PLACEHOLDER_FIELDS`, and
+   `scripts/run_eval.py` reads it to stamp a run non-reportable — so a placeholder that is not in
+   that frozenset is invisible to the one mechanism that enforces the discipline.
 
 This is the exact procedure [Rules.md §7](Rules.md#7-configuration-discipline)'s table points to as
 "[Contributing.md](Contributing.md#recipe-b--add-a-new-config-flag)" — if you arrived here from that

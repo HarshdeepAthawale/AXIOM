@@ -1,9 +1,9 @@
 # Rules
 
-Binding engineering invariants for the PRISM codebase — violations block merge, not review comments.
+Binding engineering invariants for the Axiom codebase — violations block merge, not review comments.
 
 **Owner:** Harshdeep Athawale
-**Last updated:** 2026-09-15
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 ---
@@ -71,11 +71,11 @@ This has cost other teams entire submission windows. Treat any id transformation
 |---|---|
 | Type-level | `chunk_id: str` everywhere. Never `int`, never `bytes`, never `UUID`. |
 | Dict keys | Never use a `chunk_id` as a key in a structure that is serialised via a format that coerces keys. `chunks.jsonl` stores ids as values in a JSON object field, never as bare keys in YAML. |
-| Identity test | `tests/test_id_integrity.py` (see [TestPlan.md](TestPlan.md), `TC-001`) asserts `set(ids_in) == set(ids_out)` across chunker → dense → sparse → structural → fusion → rerank for a fixture corpus. |
-| Eval assertion | `src/axiom/eval/mteb_adapter.py` asserts every emitted id is a member of the corpus id set *before* handing results to MTEB, and raises `PrismContractError` if not. This is the one place where raising is correct — see Rule 3's exception list. |
+| Identity test | `tests/test_id_integrity.py` (see [TestPlan.md](TestPlan.md), `TC-015`) asserts `set(ids_in) == set(ids_out)` across chunker → dense → sparse → structural → fusion → rerank for a fixture corpus. `TC-001` is a query-classifier case and is not this test. |
+| Eval assertion | `src/axiom/eval/mteb_adapter.py` asserts every emitted id is a member of the corpus id set *before* handing results to MTEB, and raises `AxiomContractError` if not. This is the one place where raising is correct — see Rule 3's exception list. |
 | Version scoping | Cross-version scoping uses a **separate field** (`ChunkMetadata.version_id`), never a composite id string. |
 
-**Corollary — id spaces:** PRISM has exactly two id spaces and they never mix.
+**Corollary — id spaces:** Axiom has exactly two id spaces and they never mix.
 `chunk_id` identifies a *chunk occurrence* (content + location). `content_hash` identifies *content
 alone* and is the embedding-cache key and the cross-version dedupe key. `SnippetFamily.family_id` is
 a third, derived id — it is minted in `src/axiom/versioning/evolutionary.py` and is never emitted to
@@ -124,7 +124,7 @@ must produce the same JSON whether queries arrive in dataset order or shuffled.
 ### Rule 3 — Never raise on bad input; degrade
 
 > A malformed, empty, adversarial, or pathologically long query must never terminate a run. The
-> evaluation harness will hand us ~3,765 test queries. Dying at query 9,000 of a two-hour run is
+> evaluation harness will hand us 3,765 test queries. Dying at query 3,200 of a two-hour run is
 > the single most expensive failure available to us.
 
 Every stage declares a **degradation ladder**: an ordered list of fallbacks ending in a defined,
@@ -150,20 +150,40 @@ canonical names from [Appflow.md](Appflow.md).
 | Evolutionary dedupe | `axiom.versioning.evolutionary:build_families` | version metadata missing | family grouping → identity families (one member each) |
 
 **Passthrough is a first-class outcome, not a bug.** When the reranker degrades to passthrough, the
-result objects are still well-formed: `rerank_score is None`, `score` is the RRF score, and
-`match_reason` records `"rerank_passthrough"`. A consumer can always tell degradation happened.
+result objects are still well-formed: `FusedResult.rerank_score is None`, `RetrievalResult.score`
+carries the RRF score, and the envelope's `score_field` reads `"rrf_score"` rather than
+`"rerank_score"`. A consumer can always tell degradation happened, and can always tell which of two
+scales by two orders of magnitude it is reading.
 
-**Where raising *is* correct** — exactly three categories, all of which are programmer error or
-contract violation, never input:
+**Where raising *is* correct** — exactly four categories, all of which are programmer error,
+corrupted state, or a boundary gate, never accepted input. Class names are the real ones in
+`src/axiom/core/errors.py`; see [§9.2](#92-error-taxonomy):
 
-1. **Contract violations** — `PrismContractError`. An emitted id not in the corpus; an embedding of
+1. **Contract violations** — `AxiomContractError`. An emitted id not in the corpus; an embedding of
    the wrong dimension; a manifest whose `embedding_model` disagrees with settings; a `rank` that is
    not 1-indexed contiguous. These mean the code is broken; failing loudly at run start is cheaper
    than a `0.0` score.
-2. **Configuration errors** — `PrismConfigError`, raised at startup during `Settings` validation.
-   Fail before the first query, never during query 9,000.
-3. **Missing index artefacts at startup** — `PrismIndexError`. Raised by the index loader, once, at
-   process start. Never raised per-query.
+2. **Missing index artefacts** — `IndexNotFoundError`. Raised by the index loader and by version
+   resolution when there is nothing to search at all.
+3. **An exhausted degradation ladder** — `DegradationExhaustedError`. The one case where a degrade
+   path may itself raise: every rung failed and there is nothing left below.
+4. **Invalid configuration** — pydantic's own `ValidationError` out of `Settings` construction, at
+   startup. Fail before the first query, never during query 3,200. The CLI maps it to exit 2.
+
+**The one carve-out, and it is mandatory rather than merely tolerated.** [§9.2](#92-error-taxonomy)
+forbids raising `ValueError` from `src/axiom/`. That prohibition **does not apply inside Pydantic
+`field_validator` / `model_validator` bodies in `src/axiom/schema/` and `src/axiom/api/models.py`,
+where `ValueError` is the required mechanism.** Pydantic v2 converts only `ValueError` and
+`AssertionError` into a `ValidationError`; any other exception propagates raw out of
+`model_validate` and defeats the `extra="forbid"` guarantee `ADR-014` rests on. A validator that
+raises `AxiomContractError` instead of `ValueError` is the bug, not the fix.
+
+This is not a hole in Rule 3. A validator runs at a **boundary gate**, before a request has been
+accepted — the HTTP layer turns its `ValidationError` into a `422` and the CLI into exit 2, and
+neither is a pipeline stage. Rule 3 governs input that has already been *accepted*: a query that
+survives the gate and then goes empty under truncation degrades to an empty result set with
+`match_reason="empty_query"`. Two gates at two layers, deliberately — the same split
+[API.md §5](API.md#5-degradation-vs-error-what-surfaces-where) states from the HTTP side.
 
 Everything else degrades. `except Exception` around a *whole stage* with a logged degradation and a
 typed empty result is correct and encouraged. `except Exception: pass` is never correct (see
@@ -205,9 +225,12 @@ order, dict iteration order, and thread scheduling. That is the whole point.
 
 ## 5. Determinism and seeding
 
-1. `Settings.seed` (default `1337`) is the single seed. `src/axiom/core/` exposes `seed_everything()`
-   which seeds `random`, `numpy.random`, and sets `PYTHONHASHSEED` guidance in docs (the process
-   env must already be set; the CLI asserts it under `AXIOM_STRICT_DETERMINISM=true`).
+1. `Settings.seed` (**default `42`**, `AXIOM_SEED`) is the single seed, and it is the value the
+   code carries — `1337` anywhere in this suite is stale and is a defect. It seeds FAISS IVF
+   training, the hash-embedder rung, and any sampling. `PYTHONHASHSEED` must be set in the process
+   environment before the interpreter starts; nothing inside the process can set it for itself,
+   which is why [§9.1](#91-logging-discipline)'s eval and CI invocations set it explicitly rather
+   than relying on a runtime call.
 2. ONNX Runtime session options set `intra_op_num_threads` and `inter_op_num_threads` from config.
    Thread count changes float reduction order; an unpinned thread count makes scores wobble in the
    4th decimal, which is enough to flip a tie and move NDCG@10 by ~0.1. Eval profiles pin threads.
@@ -230,10 +253,12 @@ order, dict iteration order, and thread scheduling. That is the whole point.
 2. `CUDA_VISIBLE_DEVICES=""` is set in CI, in the Dockerfile, and in `scripts/run_eval.py`.
 3. ONNX Runtime providers are explicitly `["CPUExecutionProvider"]`. Never rely on provider
    auto-selection.
-4. A test (`TC-002`) greps the source tree for the forbidden substrings and fails the build on a
-   hit. It is a crude check; it is also the check that will actually save us, because the failure it
-   prevents ("works on my machine, dies in the judge's container") is unrecoverable on submission
-   day.
+4. A CI stage greps the source tree for the forbidden substrings above — plus `faiss-gpu` in
+   `uv.lock` — and fails the build on a hit. It is a crude check; it is also the check that will
+   actually save us, because the failure it prevents ("works on my machine, dies in the judge's
+   container") is unrecoverable on submission day. It needs a `TC-###` id in
+   [TestPlan.md](TestPlan.md) Category H and does not yet have one; `TC-002` is a query-classifier
+   case and is **not** this test. Do not cite `TC-002` for it.
 5. `faiss-cpu` is the pinned dependency. `faiss-gpu` must never appear in `uv.lock`.
 6. Any model added to the stack must have a measured CPU latency recorded in
    [Tracker.md](Tracker.md) before it is wired into a default profile.
@@ -243,19 +268,20 @@ order, dict iteration order, and thread scheduling. That is the whole point.
 > **Every tunable lives in `src/axiom/config.py` or a YAML profile under `configs/`. Nothing is
 > hardcoded at a callsite. A reported score must be reproducible from a git SHA alone.**
 
-That last clause is the entire rationale. On 24 September we will report an NDCG@10 number. Someone
+That last clause is the entire rationale. On 27 September we will report an NDCG@10 number. Someone
 — a judge, a reviewer, or us in a year — must be able to check out one commit, run one command, and
 get that number. Every value that can move the number must therefore be in version control at that
 SHA, and must be *findable*: one file, not scattered across 40 function defaults.
 
 | Rule | Detail |
 |---|---|
-| Location | `Settings` (pydantic-settings v2) in `src/axiom/config.py`; profile YAMLs in `configs/` (`default`, `fast`, `accurate`, `eval`). |
-| Precedence | CLI flag > env var (`PRISM_` prefix) > profile YAML > `Settings` field default. Documented once, in [Setup.md](Setup.md). |
-| No magic numbers | `k=60`, `K_dense=100`, `K_sparse=100`, `K_struct=50`, `N_rrf=25`, `top_k=10`, `max_passes=2`, `wall_clock_budget_s=5.0`, `sufficiency_top1=0.35`, `sufficiency_floor=0.20`, `dedupe_cosine=0.95`, `stability_bonus=0.10` are **named config fields**. A literal `60` in `fusion.py` is a merge blocker. |
+| Location | `Settings` (pydantic-settings v2) in `src/axiom/config.py`; profile YAMLs in `configs/` — five of them: `default`, `demo`, `eval`, `fast`, `accurate`. |
+| Precedence | CLI flag > env var (**`AXIOM_` prefix**) > profile YAML > `Settings` field default. Documented once, in [Setup.md §7](Setup.md#7-environment-variables). |
+| No magic numbers | Every algorithm constant is a **named `Settings` field**, spelled exactly as the field is: `rrf_k=60`, `dense_top_k=100`, `sparse_top_k=100`, `structural_top_k=50`, `fusion_top_n=25`, `top_k_default=10`, `agent_max_passes=2`, `agent_wall_clock_ms=5000`, `agent_sufficiency_top1=0.35`, `agent_sufficiency_floor=0.20`, `dedupe_cosine=0.95`, `stability_bonus=0.10`, `rerank_max_chars=4096`. A literal `60` in `fusion.py` is a merge blocker. |
+| Field name ⇄ env var | The env var is the field name upper-cased under the prefix, with no renaming in between: `dense_top_k` → `AXIOM_DENSE_TOP_K`, `agent_wall_clock_ms` → `AXIOM_AGENT_WALL_CLOCK_MS`. If a document names a field whose env var is not its own upper-case form, one of the two is wrong. |
 | Provenance | Every run writes the fully-resolved config (post-precedence) into the run artefact directory next to the results JSON. A results file without its resolved config is not a result. |
 | No runtime mutation | `Settings` is frozen. Tests construct a new `Settings` rather than patching fields. |
-| Docstring per field | Every `Settings` field carries a one-line description and its unit. Fields without units (`timeout`, `budget`, `size`) are ambiguous and are rejected in review; write `timeout_s`, `budget_ms`, `size_mb`. |
+| Docstring per field | Every `Settings` field carries a one-line description and its unit. Fields without units (`timeout`, `budget`, `size`) are ambiguous and are rejected in review; write `timeout_s`, `budget_ms`, `size_mb`. The wall-clock budget is therefore `agent_wall_clock_ms` in **milliseconds** — not `agent_wall_clock_budget_s` in seconds, which is a spelling this document used to carry and which produces the wrong env var. |
 | New flag procedure | See [Contributing.md](Contributing.md#recipe-b--add-a-new-config-flag). |
 
 ## 8. The PLACEHOLDER convention
@@ -296,36 +322,62 @@ sufficiency_top1_threshold: float = Field(
 1. `logging` via the project logger factory in `src/axiom/core/`. **No `print()` in `src/axiom/`.**
    `print` is allowed only in `scripts/` top-level output and `cli.py` user-facing output (which
    uses `typer.echo`/`rich`, not `print`).
-2. Structured and stage-tagged. Every record carries `stage` (`chunk`, `embed`, `dense`, `sparse`,
-   `struct`, `fuse`, `rerank`, `agent`, `version`, `eval`), and where applicable `query_id`,
-   `version_id`, `elapsed_ms`, `n_candidates`.
+2. Structured and stage-tagged. Every record carries `stage`, and where applicable `query_id`,
+   `version_id`, `elapsed_ms`, `n_candidates`. **The tag vocabulary is closed, and it is the same
+   vocabulary that keys the `timings` block** in
+   [API.md §3.1](API.md#31-post-v1query) — one list, restated nowhere else:
+
+   | Path | Tags |
+   |---|---|
+   | Query | `plan`, `agent.fan_out`, `fuse`, `hydrate`, `rerank`, `evolutionary`, `format` |
+   | Index / reindex | `walk`, `diff`, `chunk`, `dense`, `sparse`, `struct`, `blob`, `write`, `index`, `manifest` |
+   | Eval | `dataset`, `index`, `search`, `score` |
+
+   `agent.fan_out` covers the three first-stage retrievers inside one agent pass; a stage that runs
+   twice (the loop's second pass) is **summed** into one key, because the question `timings` answers
+   is where the wall clock went.
 3. Levels: `DEBUG` developer tracing; `INFO` stage boundaries and counts, one line per stage per
    query at most; `WARNING` every degradation, always with the ladder rung taken;
    `ERROR` contract/config/index failures only; no `CRITICAL`.
-4. **No per-candidate logging at `INFO`.** 8,765 queries × 100 candidates × 3 signals is 2.6M lines
-   and it will dominate eval wall-clock.
+4. **No per-candidate logging at `INFO`.** 3,765 test queries × 100 candidates × 3 signals is
+   1.1M lines and it will dominate eval wall-clock.
 5. Never log full chunk text at any level above `DEBUG`. Log `chunk_id` and location.
 6. Timing uses the `stage_timer` context manager so that the p50/p95 budgets in the contract are
    measured by the same clock everywhere.
 
 ### 9.2 Error taxonomy
 
-All defined in `src/axiom/core/errors.py`, all deriving from `PrismError`.
+All defined in `src/axiom/core/errors.py`, all deriving from `AxiomError`. The hierarchy is
+deliberately **small**: Rule 3 means most conditions degrade rather than raise, so a seven-class
+taxonomy would mostly name classes nothing ever raises.
 
-| Exception | Raised when | Raised where | Caught where |
-|---|---|---|---|
-| `PrismError` | base, never raised directly | — | outermost CLI/API handler |
-| `PrismConfigError` | invalid/contradictory settings | `config.py` validators, startup | CLI prints and exits 2 |
-| `PrismContractError` | invariant violated (id not in corpus, wrong embedding dim, non-contiguous rank) | any stage, assertion sites | nowhere — it must terminate |
-| `PrismIndexError` | index artefact missing/corrupt/version-mismatched | `indexing/manifest.py`, loaders | CLI prints remediation and exits 3 |
-| `PrismModelError` | model load/inference failure | model adapters | the owning stage, which then degrades |
-| `PrismParseError` | tree-sitter parse failure | `chunking/` | the chunker, which then degrades |
-| `PrismBudgetError` | wall-clock budget exhausted | `agent/loop.py` | the loop, which returns best-so-far |
+| Exception | Raised when | Raised where | Caught where | CLI exit | HTTP |
+|---|---|---|---|---|---|
+| `AxiomError` | base, never raised directly | — | outermost CLI/API handler | 1 | `500` |
+| `AxiomContractError` | invariant violated (id not in corpus, wrong embedding dim, non-contiguous rank, a `chunks.jsonl` row that fails its own digest) | any stage, assertion sites | nowhere below the boundary — it must terminate | 1 | `500` `CONTRACT_VIOLATION` |
+| `IndexNotFoundError` | no index at the path, or an unknown version id | `indexing/manifest.py`, version resolution | CLI prints remediation and exits 3 | 3 | `404` when the client named the version, `503` when there is no index at all |
+| `DegradationExhaustedError` | every rung of a ladder failed | model loaders, degrade paths | the CLI/API boundary | 1 | `503` `MODEL_UNAVAILABLE` |
+| `ServeDependencyError` (`api/app.py`, subclasses `AxiomError`) | `fastapi`/`uvicorn` absent for `axiom serve` | `api/app.py` | the CLI boundary, which prints the install line | 1 | — |
+| pydantic `ValidationError` | invalid/contradictory settings, or a rejected request/flag | `Settings` construction; request models | CLI prints and exits 2; API returns `422` | 2 | `422` `VALIDATION_ERROR` |
 
-Rules: never raise bare `Exception`, `RuntimeError`, or `ValueError` from `src/axiom/`; never catch
+**Three conditions that deliberately have no exception class**, because raising for them would
+violate Rule 3: a model that fails to load but has a rung left (degrades, logged at `WARNING`); a
+tree-sitter parse failure (degrades down the chunker ladder); and an exhausted agent wall-clock
+budget (returns best-so-far and surfaces as the `AGENT_BUDGET_EXCEEDED` warning). If you find
+yourself wanting `AxiomModelError`, `AxiomParseError` or `AxiomBudgetError`, the ladder is what is
+missing, not the class.
+
+Rules: never raise bare `Exception` or `RuntimeError` from `src/axiom/`; never catch
 `BaseException`; a caught exception is either re-raised, or logged with its type and a degradation
 rung — never both swallowed and unlogged. Exception messages name the offending value and the
 config field that controls it.
+
+`ValueError` is likewise never raised from `src/axiom/` — **except inside Pydantic
+`field_validator` / `model_validator` bodies in `src/axiom/schema/` and `src/axiom/api/models.py`,
+where it is the required mechanism**: Pydantic v2 converts only `ValueError` and `AssertionError`
+into a `ValidationError`, so any other exception type escapes `model_validate` raw and breaks the
+`extra="forbid"` contract of `ADR-014`. See [Rule 3](#rule-3--never-raise-on-bad-input-degrade) for
+why a validator is a boundary gate rather than a stage.
 
 ### 9.3 Type hints
 
@@ -352,8 +404,8 @@ config field that controls it.
 3. Adding a dependency requires: a line in the PR body stating what it replaces or enables, a
    licence check (permissive only — MIT/BSD/Apache-2.0), an install-size note, and confirmation it
    has no GPU-only wheel on `linux/amd64`.
-4. No dependency may be added after the day-9 feature freeze except to fix a submission-blocking
-   defect.
+4. No dependency may be added after the feature freeze (2026-09-26) except to fix a
+   submission-blocking defect.
 5. Model weights are pulled at runtime into a gitignored cache directory, pinned by revision hash
    where the hub supports it. Never `main`/`latest`.
 
@@ -374,10 +426,29 @@ config field that controls it.
 |---|---|
 | `uv.lock`, `requirements.txt` | reproducibility |
 | `configs/*.yaml` | a score must be reproducible from a SHA |
-| Resolved-config artefacts for reported runs, and `appsretrieval_results.json` | evidence |
+| `appsretrieval_results.json` | the single scored submission artefact |
+| `data/experiments.csv` | the experiment log; [TestPlan.md](TestPlan.md) §6.4's "no number exists unless it has a row" |
+| `data/splits/`, `data/bench/` | split manifests and the latency fixture — inputs to a reported number |
+| Resolved-config artefacts for reported runs | evidence |
 | Tiny fixtures under `tests/fixtures/` (< 64 KB each, hand-written JS) | deterministic tests |
 
-`.gitignore` is the executable form of this table. If you find yourself typing `git add -f`, stop.
+`.gitignore` is the executable form of both tables, and the two tables **overlap**: `data/` and
+`appsretrieval_results.json` are ignored wholesale, while five rows above must be committed. The
+overlap is resolved by explicit negation, not by `git add -f`:
+
+```gitignore
+data/
+!data/experiments.csv
+!data/splits/
+!data/bench/
+!appsretrieval_results.json
+```
+
+Until those negations are in `.gitignore`, the submission runbook's
+`git add data/experiments.csv appsretrieval_results.json`
+([Deployment.md §4.2](Deployment.md#42-sequence) step 3) silently adds nothing, on the one day
+nobody has time to notice. If you find yourself typing `git add -f`, stop — the negation is
+missing, and that is the bug.
 
 ### 9.6 Performance regression policy
 
@@ -385,12 +456,17 @@ The budgets are contract, not aspiration: cold index 10k chunks ≤ 12 min; incr
 50 changed files ≤ 45 s; query p50 without agent loop ≤ 900 ms; query p95 with 2 agent passes ≤ 5 s;
 peak RSS during query ≤ 4 GB — all on the 8-core / 16 GB reference box.
 
-1. `scripts/bench_latency.py` prints p50/p95/peak-RSS for a fixed 50-query fixture set. It is the
-   only number anyone quotes for latency.
+1. `scripts/bench_latency.py --queries tests/fixtures/bench_queries.txt` prints p50/p95/peak-RSS,
+   and it is the only number anyone quotes for latency. **The fixture and the regression threshold
+   are owned by [TestPlan.md §5.3–§5.4](TestPlan.md)**, not restated here — this section used to
+   carry its own query count and its own percentage, and the two drifted apart from TestPlan's,
+   which is exactly what README's "each fact has exactly one home" forbids. If the committed
+   fixture and TestPlan's stated count disagree, the fixture is the artefact that runs and
+   TestPlan is the document to fix.
 2. Any PR that touches `retrieval/`, `rerank/`, `agent/`, or `indexing/` records before/after
    bench output in the PR body.
-3. A regression of **> 10 %** on any budgeted metric, or any breach of an absolute budget, blocks
-   merge. The fix is optimisation or an explicit, recorded trade against an accuracy gain — a
+3. A regression beyond [TestPlan.md §5.4](TestPlan.md)'s threshold on any budgeted metric, or any
+   breach of an absolute budget, blocks merge. The fix is optimisation or an explicit, recorded trade against an accuracy gain — a
    latency regression bought with a measured NDCG@10 gain is a legitimate trade and belongs in
    [Decisions.md](Decisions.md) as an ADR.
 4. Never buy accuracy with an unbounded loop. The agent's 2-pass / 5-second bound is a hard cap;
@@ -442,8 +518,8 @@ every comment. The author resolves, the reviewer closes. Self-merge is allowed o
 
 ## 11. Anti-pattern gallery
 
-Twelve concrete pairs. Each one is a mistake that is cheap to make in this codebase and expensive to
-find.
+Fourteen concrete pairs (`AP-01`–`AP-14`). Each one is a mistake that is cheap to make in this
+codebase and expensive to find.
 
 ### AP-01 — Mutating a chunk id (Rule 1)
 
@@ -493,18 +569,29 @@ while not evaluator.is_sufficient(results):
 
 ```python
 # RIGHT — bounded by passes AND wall clock; returns best-so-far on exhaustion.
-deadline = monotonic() + settings.agent_wall_clock_budget_s
-best = results
-for pass_no in range(1, settings.agent_max_passes + 1):     # 2
-    if evaluator.is_sufficient(best) or monotonic() >= deadline:
+# agent_max_passes bounds TOTAL retrieve -> fuse -> hydrate -> rerank cycles,
+# INITIAL PASS INCLUDED. 2 means one initial pass plus at most one refinement,
+# never three cycles. The initial retrieval is inside the loop, not before it.
+deadline = Deadline(settings.agent_wall_clock_ms)           # 5000 ms
+best = None
+for pass_no in range(1, settings.agent_max_passes + 1):     # 2 TOTAL
+    if pass_no > 1 and deadline.expired:                    # pass 1 always runs
         break
-    plan = planner.refine(plan, best)
-    candidate = retrieve(plan)
-    if top1(candidate) > top1(best):
+    candidate = retrieve_fuse_hydrate_rerank(plan)
+    if best is None or top1(candidate) > top1(best):
         best = candidate
-    log.warning("agent pass complete", extra={"stage": "agent", "pass": pass_no})
+    if evaluator.is_sufficient(candidate):
+        break
+    plan = planner.refine(plan, candidate)
+    if plan is None:                                        # rewrite == query already run
+        break
+    log.info("agent pass complete", extra={"stage": "agent", "pass": pass_no})
 return best
 ```
+
+`passes_used` is therefore in `0..agent_max_passes` — `0` only when the query went empty after
+normalisation and no pass ran at all. Anything that reports `3` on `agent_max_passes=2` is counting
+the initial retrieval outside the bound, which is the bug this pair exists to prevent.
 
 ### AP-04 — Silent exception swallowing (Rule 3)
 
@@ -520,7 +607,7 @@ except Exception:
 # RIGHT — degrade to a declared rung, log it, count it.
 try:
     hits = self.structural_search(plan)
-except (PrismParseError, sqlite3.Error) as exc:
+except Exception as exc:                       # a WHOLE stage; see Rule 3
     log.warning("structural degraded to identifier match",
                 extra={"stage": "struct", "reason": type(exc).__name__})
     self.degradations["struct.identifier_fallback"] += 1
@@ -580,10 +667,11 @@ fused = rrf(lists, k=60)[:25]
 ```
 
 ```python
-# RIGHT — every number is a named, documented, sweepable Settings field.
-dense_hits = dense.search(qvec, cfg.candidate_width_dense)      # 100
-sparse_hits = sparse.search(tokens, cfg.candidate_width_sparse)  # 100
-fused = rrf(lists, weights=plan.strategy_weights, k=cfg.rrf_k)[: cfg.rrf_top_n]
+# RIGHT — every number is a named, documented, sweepable Settings field, spelled
+# exactly as config.py spells it, so the env var is its own upper-case form.
+dense_hits = dense.search(qvec, cfg.dense_top_k)        # AXIOM_DENSE_TOP_K   = 100
+sparse_hits = sparse.search(tokens, cfg.sparse_top_k)   # AXIOM_SPARSE_TOP_K  = 100
+fused = rrf(lists, weights=plan.strategy_weights, k=cfg.rrf_k)[: cfg.fusion_top_n]
 ```
 
 ### AP-08 — Mutating a caller-owned input (Rule 2)
@@ -618,7 +706,7 @@ key = f"{file_path}:{os.path.getmtime(file_path)}"
 key = chunk.content_hash                       # blake2b-128 of normalised content
 vec = blobs.load(key)                          # .axiom/blobs/<content_hash>.npy
 if vec is not None and vec.shape[-1] != manifest.embedding_dim:
-    raise PrismContractError(f"blob {key} dim {vec.shape[-1]} != {manifest.embedding_dim}")
+    raise AxiomContractError(f"blob {key} dim {vec.shape[-1]} != {manifest.embedding_dim}")
 ```
 
 ### AP-10 — Turning a distance into a score by accident (Rule 4)
@@ -642,7 +730,7 @@ return [ScoredChunk(chunk_id=idmap[i], score=float(s), rank=r + 1, signal=Signal
 ### AP-11 — Raising on malformed query input (Rule 3)
 
 ```python
-# WRONG — query 9,000 of a two-hour eval run is "   " and the run dies.
+# WRONG — query 3,200 of a two-hour eval run is "   " and the run dies.
 def tokenize(query: str) -> list[str]:
     tokens = CODE_TOKEN_RE.findall(query)
     if not tokens:
@@ -678,8 +766,8 @@ def search(self, query: str) -> list[RetrievalResult]:
 ```python
 # RIGHT — the read path loads a built index; chunking and embedding are offline only.
 def search(self, query: str) -> list[RetrievalResult]:
-    qvec = self.embedder.encode_query(query)     # one short sequence
-    hits = self.dense_index.search(qvec, self.cfg.candidate_width_dense)
+    qvec = self.embedder.encode_query(query, self.cfg.embedding_query_instruction)
+    hits = self.dense_index.search(qvec, self.cfg.dense_top_k)
     ...
 ```
 
@@ -718,9 +806,9 @@ RIGHT — Tracker.md entry before the number is quoted anywhere:
    radius.
 3. All four members approve. Cardinal rules 1–4 additionally require an ADR in
    [Decisions.md](Decisions.md).
-4. Rules may not be relaxed during the final two days (day 9–10) of the sprint. If a rule is
-   blocking submission on day 9, the answer is a recorded exception in the PR body naming the
-   commit, not a rule edit.
+4. Rules may not be relaxed during the final two days of the window (2026-09-26 and 2026-09-27).
+   If a rule is blocking submission on 26 September, the answer is a recorded exception in the PR
+   body naming the commit, not a rule edit.
 
 ## Related documents
 

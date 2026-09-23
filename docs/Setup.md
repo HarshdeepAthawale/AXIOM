@@ -3,10 +3,10 @@
 Clean clone to a running Axiom system on a CPU-only machine, in one sitting.
 
 **Owner:** Parth Deshmukh
-**Last updated:** 2026-09-15
+**Last updated:** 2026-09-23
 **Status:** Draft
 
-Related: [Deployment.md](Deployment.md) (containers, release, demo day), [API.md](API.md) (HTTP + CLI contracts), [Architecture.md](Architecture.md), [Evaluation.md](Evaluation.md), [OpenQuestions.md](OpenQuestions.md).
+Related: [Deployment.md](Deployment.md) (containers, release, demo day), [API.md](API.md) (HTTP + CLI contracts), [Design.md](Design.md) (architecture), [TestPlan.md](TestPlan.md) (evaluation protocol), [_CONTRACT.md](_CONTRACT.md) (locked facts), [OpenQuestions.md](OpenQuestions.md).
 
 ---
 
@@ -16,7 +16,7 @@ Related: [Deployment.md](Deployment.md) (containers, release, demo day), [API.md
 |---|---|---|
 | Python | 3.11 (3.11-3.12 supported) | 3.13 **untested** — `faiss-cpu` and `llama-cpp-python` wheels lag. Do not use it. |
 | git | ≥ 2.34 | Required at runtime, not just for cloning: P1 incremental reindex shells out to `git diff --name-status`. |
-| Free disk | ~8 GB | ~3.5 GB HF model cache, ~1.6 GB ONNX artifacts, ~1.0 GB GGUF, ~0.1 GB dataset, ~1.5 GB indices + blobs, rest headroom. |
+| Free disk | ~16 GB during setup, ~9 GB steady state | See the arithmetic in §5.1. Peak is during ONNX export, which needs the HF cache *and* the fp32 intermediate *and* the INT8 output on disk at once. |
 | RAM | 16 GB recommended, 8 GB minimum | 8 GB works if you set `AXIOM_EMBEDDING_BATCH_SIZE=16` and `AXIOM_LLM_ENABLED=false`. Budgets in [_CONTRACT.md](_CONTRACT.md) §7 assume the 16 GB / 8-core reference box. |
 | GPU | **Not required and not used** | The judging hardware is CPU-only. There is no CUDA code path anywhere in `src/axiom/`. See §3. |
 | C toolchain | Only if a wheel is missing | `build-essential` (Linux) / Xcode CLT (macOS) / MSVC Build Tools (Windows). Needed only when `tree-sitter` or `llama-cpp-python` fall back to source builds. |
@@ -46,7 +46,7 @@ sudo apt-get install -y python3.11 python3.11-venv python3.11-dev git build-esse
 ```
 
 - `faiss-cpu` ships manylinux x86_64 wheels — no source build.
-- `tree-sitter-javascript` ships wheels; no grammar compilation step is required. If you see a source build, you are on an unsupported interpreter (§7, row "tree-sitter grammar not built").
+- `tree-sitter-javascript` ships wheels; no grammar compilation step is required. If you see a source build, you are on an unsupported interpreter (§9, the tree-sitter row).
 
 ### 2.2 macOS arm64
 
@@ -83,7 +83,7 @@ winget install Git.Git
   ```powershell
   wsl --install -d Ubuntu-24.04
   ```
-  Keep the repo inside the WSL filesystem (`~/axiom`), not on `/mnt/c` — the `/mnt/c` bridge makes index writes ~5x slower and breaks `git diff` mtime assumptions.
+  Keep the repo inside the WSL filesystem (`~/Samsung-Prism-Hack`), not on `/mnt/c` — the `/mnt/c` bridge makes index writes ~5x slower and breaks `git diff` mtime assumptions.
 - Paths inside [_CONTRACT.md](_CONTRACT.md) §4 (`ChunkLocation.file_path`) are **always POSIX-separated**, even when indexing on Windows. The chunker normalises separators; never write a backslash into a manifest by hand.
 
 ---
@@ -119,8 +119,8 @@ Torch is used only for the one-time ONNX export (§6) and as a fallback embeddin
 ### 4.1 Primary path — `uv`
 
 ```bash
-git clone https://github.com/Incognito/axiom.git
-cd axiom
+git clone https://github.com/HarshdeepAthawale/Samsung-Prism-Hack.git
+cd Samsung-Prism-Hack
 
 uv venv --python 3.11
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -144,8 +144,8 @@ git add pyproject.toml uv.lock && git commit -m "deps: add bm25s"
 For anyone who cannot install `uv`, or for a minimal container layer:
 
 ```bash
-git clone https://github.com/Incognito/axiom.git
-cd axiom
+git clone https://github.com/HarshdeepAthawale/Samsung-Prism-Hack.git
+cd Samsung-Prism-Hack
 
 python3.11 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -153,7 +153,7 @@ python -m pip install --upgrade pip
 
 pip install torch --index-url https://download.pytorch.org/whl/cpu      # §3, first
 pip install -r requirements.txt
-pip install -e .                    # src-layout: makes `import axiom` and `axiom` CLI work
+pip install -e .                    # src-layout: makes `import axiom` and the `axiom` CLI work
 ```
 
 `requirements.txt` is generated from the lock, never hand-written:
@@ -194,16 +194,45 @@ If you see `1.x` or `False`, your environment is wrong, not the code. `pip insta
 
 ### 5.1 What gets downloaded
 
-Model roles and fallbacks are locked in [_CONTRACT.md](_CONTRACT.md) §2. Sizes are on-disk after download.
+Model roles are locked in [_CONTRACT.md](_CONTRACT.md) §2. Sizes are on-disk after download.
 
-| Role | Repo | Source | Approx size | Fallback | Fallback size |
+| Role | Repo | Source | Download | Fallback | Fallback download |
 |---|---|---|---|---|---|
 | Dense embedder | `Qwen/Qwen3-Embedding-0.6B` | HF Hub | 1.2 GB (bf16 safetensors) | `sentence-transformers/all-MiniLM-L6-v2` | 90 MB |
 | Cross-encoder reranker | `BAAI/bge-reranker-v2-m3` | HF Hub | 2.3 GB (fp32 safetensors) | `cross-encoder/ms-marco-MiniLM-L-6-v2` | 90 MB |
 | Query LLM (GGUF) | `Qwen/Qwen2.5-1.5B-Instruct-GGUF`, file `qwen2.5-1.5b-instruct-q4_k_m.gguf` | HF Hub | 1.1 GB | heuristic rule engine, no download | 0 |
 | JS grammar | `tree-sitter-javascript` | PyPI wheel | 3 MB | regex identifier extraction | 0 |
 
-Post-export INT8 ONNX artifacts add ~0.6 GB (embedder) + ~0.6 GB (reranker). Budget ~7 GB for models in total, including the HF cache copy that the export reads from.
+**The reranker row is profile-split** ([_CONTRACT.md §2](_CONTRACT.md#2-model-stack-locked-cpu-only)):
+`eval.yaml` keeps `bge-reranker-v2-m3` as primary and buys the cost back by narrowing the candidate
+chain; `demo.yaml` promotes `ms-marco-MiniLM-L-6-v2` to primary, because latency is what the jury
+watches. Both are downloaded — neither is optional.
+
+#### Disk arithmetic — do this sum before you start, not halfway through the export
+
+`NFR-12`'s ceiling is derived from this table, not asserted independently of it.
+
+| | Primary profile | Fallback profile (`configs/fast.yaml`) |
+|---|---|---|
+| Downloaded (HF cache) | 1.2 + 2.3 + 1.1 + 0.003 = **~4.6 GB** | 0.09 + 0.09 + 0.003 = **~0.19 GB** |
+| ONNX fp32 intermediates (§6.1, deletable afterwards) | ~2.3 + ~2.3 = ~4.6 GB | ~0.36 GB |
+| INT8 ONNX artifacts (kept) | ~0.6 + ~0.6 = ~1.2 GB | ~0.09 GB |
+| Dataset cache (§5.5) | ~0.11 GB | ~0.11 GB |
+| Indices + blobs, 10k chunks | ~1.5 GB | ~0.6 GB |
+| **Transient peak during export** | **~10.4 GB** | ~1.1 GB |
+| **Steady state after deleting `-fp32/`** | **~7.4 GB** | **~1.0 GB** |
+
+So: **~4.6 GB downloaded, ~7 GB on disk steady state, ~10.4 GB transient peak** for the primary
+profile. The "< 2.5 GB" figure that `NFR-12` used to carry is contradicted by this table's own
+first row and is not recoverable by rounding — it was written against a stack that did not include
+`bge-reranker-v2-m3`. The fallback profile is the one that genuinely meets a < 500 MB download
+promise, and that is the promise worth making to a bandwidth-limited evaluator.
+
+Two ways to shrink the primary profile if the evaluator's disk is tight, in order of preference:
+delete the `-fp32/` directories the moment each quantise step finishes (§6.1), which is the 3 GB
+saving; and, if a network round-trip is cheaper than local disk, pre-export the INT8 artifacts once
+and publish them to an HF repo of our own, so the evaluator pulls ~1.2 GB of INT8 ONNX and never
+runs `optimum` at all.
 
 ### 5.2 Where weights cache
 
@@ -239,7 +268,7 @@ huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct-GGUF \
   --local-dir data/models/gguf --local-dir-use-symlinks False
 ```
 
-Downloads resume. If one is interrupted, re-run the same command — do **not** delete the cache (§7).
+Downloads resume. If one is interrupted, re-run the same command — do **not** delete the cache (§9).
 
 ### 5.4 Pre-download for an offline demo (do this the day before)
 
@@ -257,7 +286,7 @@ Then flip the environment to hard-offline and prove it still works:
 ```bash
 export HF_HUB_OFFLINE=1
 export AXIOM_OFFLINE=true
-axiom search "how is the input normalized" --top-k 5
+axiom query "how is the input normalized" --top-k 5
 ```
 
 `AXIOM_OFFLINE=true` makes any attempted network fetch raise `MODEL_UNAVAILABLE` immediately (see [API.md](API.md) §6) instead of hanging on a socket timeout in front of the jury.
@@ -266,7 +295,7 @@ axiom search "how is the input normalized" --top-k 5
 
 **Read this before you touch the eval path.** `CoIR-Retrieval/apps` is the APPS dataset: **English competitive-programming problem statements retrieving Python solutions**. Each corpus entry is a single-file, standalone program. There is no cross-file call graph, no import graph, and nothing for the structural signal to traverse.
 
-The **JavaScript** constraint in the problem statement applies to the **live-demo codebase**, not to the benchmark. These are two different corpora with two different index trees and two different config profiles (§7.0):
+The **JavaScript** constraint in the problem statement applies to the **live-demo codebase**, not to the benchmark. These are two different corpora with two different index trees and two different config profiles (§7.1):
 
 | | Benchmark corpus | Demo corpus |
 |---|---|---|
@@ -345,9 +374,58 @@ Notes:
 - `--opset 17` is deliberate. `onnxruntime` 1.18 supports up to opset 20, but opset 17 is the highest that the `--avx512_vnni` dynamic quantiser handles cleanly for these architectures. Raising it produces the opset mismatch in §7.
 - On arm64 (macOS, WSL on Snapdragon) drop `--avx512_vnni`; the quantiser falls back to portable QOperator kernels. Throughput drops roughly 25%, accuracy is unchanged.
 - Export peaks at ~6 GB RSS for the reranker. On an 8 GB box, export the two models in separate processes, not in one script.
-- Delete the `-fp32/` directories after quantising if disk is tight; they are only inputs.
+- Delete the `-fp32/` directories after quantising if disk is tight; they are only inputs. Per the
+  §5.1 arithmetic this is a ~3 GB saving and costs nothing — the INT8 artifact is self-contained.
 
-### 6.2 Verify the artifact
+### 6.2 Pooling and the query-side instruction envelope
+
+**Read this before §6.3. It is the highest-probability silent failure in the build, and it lands
+directly on the only scored metric.**
+
+`optimum-cli export onnx --task feature-extraction` exports `last_hidden_state` only — a
+`(batch, seq, hidden)` tensor. It does **not** export a pooling head. Pooling is therefore
+reimplemented in Python, in `src/axiom/indexing/embedder.py`, and the two models in the stack pool
+**differently**. A single shared pooler is itself a bug.
+
+| Model | Pooling | Query-side envelope |
+|---|---|---|
+| `Qwen/Qwen3-Embedding-0.6B` | **last real token** | `Instruct: {task}\nQuery:{query}` |
+| `sentence-transformers/all-MiniLM-L6-v2` | attention-mask-weighted **mean** | none |
+| hash rung (no model present) | n/a — bag-of-tokens | none |
+
+What the code actually does, so the spec and the implementation cannot drift apart:
+
+1. **Last-token pooling selects the last *real* token, not the last *slot*.** `OnnxEmbedder._pool`
+   computes `lengths = attention_mask.sum(axis=1) - 1` and indexes
+   `hidden[arange(batch), lengths]`. This matters: the tokenizer pads **right** (the `tokenizers`
+   default), so a naive `last_hidden_state[:, -1, :]` would return the PAD token's state for every
+   row shorter than the longest in the batch — which, at `AXIOM_EMBEDDING_BATCH_SIZE=64`, is 63 of
+   every 64 chunks, silently, producing well-formed, correctly-dimensioned, near-useless vectors.
+   The mask-derived index is equivalent to left-padding plus `[:, -1, :]` and does not require the
+   padding direction to be reconfigured.
+2. **Mean pooling is mask-weighted**, `(hidden * mask).sum(1) / max(mask.sum(1), 1)` — PAD
+   positions contribute nothing and do not dilute the denominator.
+3. **The pooler is chosen from the model id**, `"qwen3-embedding" in model_id.lower()`, not from
+   configuration, so a degrade from the primary rung to MiniLM switches pooling with it.
+4. **The instruction envelope is applied on the QUERY SIDE ONLY.** `Embedder.encode_query(text,
+   task)` wraps; `Embedder.encode(texts)` — every index-time path — does not. Wrapping the corpus
+   would embed every chunk behind the same prefix and collapse their separation. The wrapping is
+   also gated on the model: `needs_query_instruction` is true only for the instruction-tuned
+   primary, because prefixing a query for a model that was never trained on the envelope makes
+   retrieval worse, not better.
+5. **The task string is configuration, not a literal.** `Settings.embedding_query_instruction`,
+   overridable as `AXIOM_EMBEDDING_QUERY_INSTRUCTION` and committed to `configs/`, so a reported
+   score is reproducible from a SHA.
+6. **L2 normalisation happens after pooling**, at the output boundary of every rung, so FAISS inner
+   product equals cosine everywhere downstream.
+
+The exact envelope, byte for byte — note there is **no space** after `Query:`:
+
+```text
+Instruct: {task}\nQuery:{query}
+```
+
+### 6.3 Verify the artifact
 
 ```bash
 python - <<'PY'
@@ -380,23 +458,85 @@ du -sh data/models/onnx/qwen3-embedding-0.6b-fp32 data/models/onnx/qwen3-embeddi
 # ~0.6G   int8
 ```
 
+### 6.4 Verify the *behaviour*, not just the shape
+
+**The shape check above cannot detect the failure that matters.** Every wrong pooling choice --
+PAD token instead of last real token, mean instead of last, no instruction envelope, the envelope
+applied to documents as well as queries -- still returns a `(1, 1024)` float32 vector and still
+passes `hidden == 1024`. The check that catches them is a *relative* one: paraphrases must land
+closer together than an unrelated string.
+
+Save the block below as `check_embedder.py` and run `python check_embedder.py` (it is short enough
+to paste into `python -` instead; it is not committed tooling):
+
+```python
+from axiom.config import get_settings
+from axiom.indexing.embedder import load_embedder
+import numpy as np
+
+settings = get_settings()
+emb = load_embedder(settings)
+print("rung   :", emb.model_id, "dim", emb.dim)
+
+a = "read a file from disk and return its contents as a string"
+b = "load the contents of a file into memory and hand back the text"   # paraphrase of a
+c = "compute the determinant of a square matrix by LU decomposition"   # unrelated
+
+va, vb, vc = emb.encode([a, b, c])
+ab, ac = float(va @ vb), float(va @ vc)
+print(f"cos(a,b)={ab:.4f}  cos(a,c)={ac:.4f}  margin={ab - ac:+.4f}")
+
+assert abs(float(np.linalg.norm(va)) - 1.0) < 1e-5, "vectors are not L2-normalised"
+assert ab > ac + 0.05, "POOLING IS WRONG: paraphrases are not closer than an unrelated string"
+
+# The query path must differ from the document path on an instruction-tuned model,
+# and must NOT differ on a model that was never trained with the envelope.
+doc_vec = emb.encode_one(a)
+query_vec = emb.encode_query(a, settings.embedding_query_instruction)
+differs = float(doc_vec @ query_vec) < 0.999
+print("query envelope applied:", differs, "expected:", emb.needs_query_instruction)
+assert differs == emb.needs_query_instruction, "query/document asymmetry is wrong for this rung"
+print("OK")
+```
+
+Expected on the primary rung:
+
+```
+rung   : Qwen/Qwen3-Embedding-0.6B dim 1024
+cos(a,b)=0.8xxx  cos(a,c)=0.4xxx  margin=+0.4xxx
+query envelope applied: True expected: True
+OK
+```
+
+The absolute cosines vary by model and are not the assertion; the **margin** and the
+**query/document asymmetry** are. If the margin is near zero or negative, stop -- you are about
+to index 8,765 documents into vectors that satisfy every other assertion in the codebase and
+score like noise, which is indistinguishable from "the model just isn't good on APPS".
+
+This runs against whichever rung actually loaded. On a box with no ONNX artifacts it exercises
+the hash rung, where the margin is smaller but still positive -- that is the expected outcome,
+not a failure, and the `rung   :` line tells you which case you are in. Wire this into the CI
+smoke-index job ([_CONTRACT.md](_CONTRACT.md) §1), not only into this document.
+
 ---
 
 ## 7. Environment Variables
 
-All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered over the YAML profile named by `AXIOM_PROFILE`. Precedence, lowest to highest: profile YAML in `configs/` → `.env` → process environment → CLI flag.
+All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered over the YAML profile named by `AXIOM_PROFILE`. Precedence, lowest to highest: `Settings` field default → profile YAML in `configs/` → `.env` → process environment → CLI flag. This is the same chain [Rules.md §7](Rules.md#7-configuration-discipline) states from the other direction, and it is the only statement of it.
+
+**Every variable below is the field name in `src/axiom/config.py`, upper-cased under the prefix, with no renaming in between.** `AXIOM_DENSE_TOP_K` is `Settings.dense_top_k`; `AXIOM_AGENT_WALL_CLOCK_MS` is `Settings.agent_wall_clock_ms`. If another document names a field whose env var is not its own upper-case form, that document is wrong.
 
 ### 7.1 Core
 
 | Variable | Type | Default | Effect |
 |---|---|---|---|
-| `AXIOM_PROFILE` | str | `default` | Loads `configs/<profile>.yaml`. Valid: `default`, `fast`, `accurate`, `eval`. |
+| `AXIOM_PROFILE` | str | `default` | Loads `configs/<profile>.yaml`. Valid: `default`, `demo`, `eval`, `fast`, `accurate` — five, and `demo` is first-class, not a rename of `default` ([_CONTRACT.md](_CONTRACT.md) §3). |
 | `AXIOM_INDEX_ROOT` | path | `.axiom` | Root of the on-disk index tree ([_CONTRACT.md](_CONTRACT.md) §6). |
 | `AXIOM_DATA_ROOT` | path | `data` | Models, datasets, HF cache parent. |
 | `AXIOM_LOG_LEVEL` | str | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR`. |
 | `AXIOM_LOG_FORMAT` | str | `console` | `console` for humans, `json` for CI and the demo box. |
 | `AXIOM_NUM_THREADS` | int | `0` | ONNX Runtime intra-op threads and FAISS `omp_set_num_threads`. `0` = physical core count. Set to 4 on a laptop to keep the UI responsive while indexing. |
-| `AXIOM_SEED` | int | `42` | Seeds numpy/random for IVF training and any sampling. Deterministic eval depends on it. |
+| `AXIOM_SEED` | int | `42` | Seeds FAISS IVF training, the hash-embedder rung, and any sampling. Deterministic eval depends on it. `42` is the value `Settings.seed` carries; `1337` anywhere in this suite is stale. |
 | `AXIOM_OFFLINE` | bool | `false` | Refuse all network access; also exports `HF_HUB_OFFLINE=1` to child processes. Use for the demo. |
 
 ### 7.2 Models
@@ -409,8 +549,10 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 | `AXIOM_EMBEDDING_DIM` | int | `1024` | Asserted against the loaded model at startup; a mismatch is fatal, not a warning. |
 | `AXIOM_EMBEDDING_BATCH_SIZE` | int | `64` | Chunks per forward pass during indexing. Drop to `16` on an 8 GB box. |
 | `AXIOM_EMBEDDING_MAX_TOKENS` | int | `512` | Truncation length for chunk text. |
-| `AXIOM_RERANKER_MODEL` | str | `BAAI/bge-reranker-v2-m3` | HF repo id of the cross-encoder. |
-| `AXIOM_RERANKER_ENABLED` | bool | `true` | `false` returns the raw RRF ordering. Costs roughly 5-8 NDCG@10 points; useful to isolate a regression. |
+| `AXIOM_EMBEDDING_QUERY_INSTRUCTION` | str | `Given a natural-language question about a codebase, retrieve the code snippets that answer it` | The `{task}` half of the `Instruct: {task}\nQuery:{query}` envelope, applied on the **query side only**, and only by an instruction-tuned embedder (§6.2). Committed to `configs/` so a reported score is reproducible from a SHA. |
+| `AXIOM_RERANKER_MODEL` | str | `BAAI/bge-reranker-v2-m3` | HF repo id of the cross-encoder. Profile-split: `eval.yaml` keeps this value, `demo.yaml` and `fast.yaml` set `cross-encoder/ms-marco-MiniLM-L-6-v2` ([_CONTRACT.md](_CONTRACT.md) §2). |
+| `AXIOM_RERANK_MAX_CHARS` | int | `4096` | Per-document truncation window before cross-encoder scoring. Cost is quadratic in sequence length for the attention term, so this and `AXIOM_FUSION_TOP_N` are the two levers on rerank latency. `eval.yaml` sets `1024`. |
+| `AXIOM_RERANKER_ENABLED` | bool | `true` | `false` returns the raw RRF ordering, and the response's `score_field` reads `rrf_score` rather than `rerank_score`. The accuracy cost is an ablation row we owe, not a figure this document may assert unmeasured. |
 | `AXIOM_RERANKER_ONNX_PATH` | path | `data/models/onnx/bge-reranker-v2-m3-int8/model.onnx` | Overrides the derived artifact path. |
 | `AXIOM_RERANKER_TIMEOUT_MS` | int | `2500` | Per-query rerank wall clock. On expiry the RRF order is returned and `RERANKER_TIMEOUT` is surfaced as a warning. |
 
@@ -443,6 +585,12 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 | `AXIOM_FAISS_IVF_THRESHOLD` | int | `50000` | Vectors at or above this use `IndexIVFPQ`; below, `IndexFlatIP`. |
 | `AXIOM_CHUNK_MIN_TOKENS` | int | `16` | Chunks smaller than this merge into their parent. |
 | `AXIOM_CHUNK_TARGET_TOKENS` | int | `512` | Upper target; oversized functions split at statement boundaries with 1-statement overlap. |
+| `AXIOM_CHUNK_MIN_TARGET_TOKENS` | int | `64` | Lower end of the 64-512 target band. |
+| `AXIOM_DENSE_ENABLED` | bool | `true` | `false` drops the dense signal entirely. |
+| `AXIOM_SPARSE_ENABLED` | bool | `true` | `false` drops the sparse signal entirely. |
+| `AXIOM_STRUCTURAL_ENABLED` | bool | `true` | `false` skips building and querying `structural.sqlite`. `eval.yaml` sets this, because APPS has no cross-file structure to index. |
+| `AXIOM_EVAL_DENSE_WEIGHT` | float | `0.85` | Dense weight when the structural signal is off; the vector collapses to dense/sparse. |
+| `AXIOM_EVAL_SPARSE_WEIGHT` | float | `0.15` | The sparse half. `# PLACEHOLDER`, `OQ-02`, swept on the **train** split by `T-112`. |
 
 ### 7.5 Versioning and evolutionary
 
@@ -494,6 +642,7 @@ AXIOM_EMBEDDING_BATCH_SIZE=64
 AXIOM_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 AXIOM_RERANKER_ENABLED=true
 AXIOM_RERANKER_TIMEOUT_MS=2500
+AXIOM_RERANK_MAX_CHARS=4096
 
 # ---- agent ----
 AXIOM_LLM_ENABLED=true
@@ -504,6 +653,7 @@ AXIOM_AGENT_WALL_CLOCK_MS=5000
 
 # ---- retrieval ----
 AXIOM_RRF_K=60
+AXIOM_FAISS_IVF_THRESHOLD=50000
 AXIOM_DENSE_TOP_K=100
 AXIOM_SPARSE_TOP_K=100
 AXIOM_STRUCTURAL_TOP_K=50
@@ -557,112 +707,146 @@ mteb        2.1.0 True
 ### Rung 2 — package wiring and config (~1 s)
 
 ```bash
-axiom --version
-axiom config show --profile default
+axiom --app-version
+axiom --help
 ```
 
-Expected:
+Expected: `axiom 0.1.0`, then the usage block listing eleven subcommands — `index`, `reindex`,
+`query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc`, and the hidden `version`
+alias.
 
-```
-axiom 0.1.0 (profile=default, embedding=Qwen/Qwen3-Embedding-0.6B, dim=1024, llm=on)
+**`--app-version`, not `--version`.** The global `--version` flag takes a *string*: it names the
+**index version id** to operate on, and `axiom --version` on its own is a usage error, not a
+version banner. This trips people once and then never again.
 
-profile              default
-index_root           .axiom
-embedding_model      Qwen/Qwen3-Embedding-0.6B
-embedding_backend    onnx
-embedding_dim        1024
-reranker_model       BAAI/bge-reranker-v2-m3
-reranker_enabled     True
-llm_enabled          True
-agent_max_passes     2
-rrf_k                60
-num_threads          8 (auto)
+There is no `axiom config show`. To see the resolved configuration:
+
+```bash
+python -c "from axiom.config import get_settings; import json; print(json.dumps(get_settings().model_dump(mode='json'), indent=2, default=str))"
 ```
+
+The values to eyeball are `profile`, `index_root`, `embedding_model`, `embedding_dim`,
+`reranker_model`, `reranker_enabled`, `llm_enabled`, `agent_max_passes`, `rrf_k`, `seed` (`42`).
 
 `command not found` means you skipped `pip install -e .` or are in the wrong venv.
 
 ### Rung 3 — unit tests (~40 s)
 
 ```bash
-pytest -q tests/ -x --timeout=120
+pytest -q tests/
 ```
 
-Expected tail:
+Expected tail: a `N passed` line with no failures, in well under a minute.
 
-```
-187 passed, 3 skipped in 38.42s
-```
+No `--timeout=120` — that flag needs `pytest-timeout`, which is not in the `dev` extra. Do not add
+the flag without adding the plugin to `pyproject.toml` in the same commit, or the whole rung fails
+with `unrecognized arguments` and looks like a broken install.
 
-Skips are the LLM-dependent tests when no GGUF is present — acceptable. Any failure here is a code problem, not a setup problem; see [TestPlan.md](TestPlan.md).
+Skips are the model-dependent tests when no ONNX export or GGUF is present — acceptable. Any
+failure here is a code problem, not a setup problem; see [TestPlan.md](TestPlan.md).
 
 ### Rung 4 — smoke index over the fixture repo (~25 s)
 
-`tests/fixtures/mini_repo/` is a 14-file JavaScript toy repo committed to the repo specifically so setup can be verified without the real corpus.
+`tests/fixtures/repo_v1/` is a 13-file JavaScript toy repo committed specifically so setup can be
+verified without the real corpus. It deliberately contains hostile cases — an unparseable file, a
+circular import pair, an empty file, and two byte-identical duplicates — so this rung exercises the
+degradation ladders rather than only the happy path. (`repo_v2/` is the same tree one "version"
+later, and is what the reindex and evolutionary paths diff against.)
 
 ```bash
-axiom index tests/fixtures/mini_repo --version-id smoke --index-root /tmp/axiom-smoke
+axiom index tests/fixtures/repo_v1 --version-id smoke --index-root /tmp/axiom-smoke
 ```
 
-Expected:
+Expected — shape, not exact counts, which move whenever the chunker changes:
 
 ```
-[00:00] discover   14 files (.js)
-[00:01] chunk      97 chunks  (function=71 method=14 class=8 module=4)
-[00:09] embed      97 vectors dim=1024 backend=onnx batch=64
-[00:10] sparse     bm25s index built, vocab=2,431
-[00:11] structural 97 symbols, 168 calls, 22 imports, 19 exports
-[00:11] manifest   /tmp/axiom-smoke/index/smoke/manifest.json
-done: version=smoke chunks=97 elapsed=11.4s
+indexed tests/fixtures/repo_v1 as version smoke
+  chunks     36 from 13 file(s)
+  embedder   Qwen/Qwen3-Embedding-0.6B (dim 1024)
+  dense      faiss / flat_ip
+  sparse     bm25s
+  structural built
+  elapsed    276 ms
+  degraded:  chunker: tree-sitter parse error, unsupported syntax -> regex identifier splitter
 ```
+
+**That one `degraded:` line is expected and is the point** — `src/broken/syntax_error.js` is
+unparseable on purpose, and the chunker is required to fall down its ladder rather than abort the
+index. Any *other* degrade line is a real finding. In particular:
+
+```
+  embedder   axiom/hash-embedder-v1 (dim 1024)
+  degraded:  indexing.embedder: ... no ONNX export at data/models/onnx/... -> next rung
+```
+
+means §6's export never ran, or `AXIOM_EMBEDDING_ONNX_PATH` points somewhere else. The index still
+builds and still answers queries — the bottom rung is a seeded bag-of-token-hashes, not noise — but
+it is **not** a semantic retriever, and no number measured on it means anything.
 
 Then confirm the on-disk layout matches [_CONTRACT.md](_CONTRACT.md) §6:
 
 ```bash
-find /tmp/axiom-smoke -maxdepth 3 -type f -o -maxdepth 3 -type d | sort
+find /tmp/axiom-smoke -maxdepth 3 | sort
 # /tmp/axiom-smoke/registry.json
-# /tmp/axiom-smoke/blobs
+# /tmp/axiom-smoke/blobs/<content_hash>.npy          (one per distinct content)
 # /tmp/axiom-smoke/index/smoke/manifest.json
 # /tmp/axiom-smoke/index/smoke/chunks.jsonl
 # /tmp/axiom-smoke/index/smoke/dense.faiss
 # /tmp/axiom-smoke/index/smoke/dense.idmap.json
-# /tmp/axiom-smoke/index/smoke/sparse.bm25s
+# /tmp/axiom-smoke/index/smoke/sparse.bm25s/          (bm25s native dir)
 # /tmp/axiom-smoke/index/smoke/structural.sqlite
 ```
 
-### Rung 5 — smoke search returning ranked results (~2 s)
+The blob count is lower than the chunk count on this fixture, and that is correct:
+`src/dup/copy_a.js` and `copy_b.js` are byte-identical, so they share one `content_hash` and one
+vector. That is `FR-19`'s dedupe working, visible on a 13-file repo.
+
+### Rung 5 — smoke query returning ranked results (~2 s)
+
+**The subcommand is `query`.** There is no `axiom search` — that name appears in older drafts and
+produces `No such command 'search'`.
 
 ```bash
-axiom search "how is user input normalized before dispatch" \
+axiom query "how is user input normalized before dispatch" \
   --version smoke --index-root /tmp/axiom-smoke --top-k 3
 ```
 
-Expected:
+Expected — a header, then one card per hit:
 
 ```
-query_type=SEMANTIC  passes=1  latency=712ms  reranker=on  llm=on
+ query      'how is user input normalized before dispatch'
+ type       SEMANTIC   passes 1 (sufficient)
+ versions   smoke   profile default
+ results    3 of top-k 3 in 267 ms
 
-1. 0.8421  src/utils/normalize.js:10-25  normalizeInput()
-   match_reason: dense rank 1, sparse rank 4 - semantic match on "normalize"/"sanitize"
-   signals: DENSE=1 SPARSE=4
-
-2. 0.6107  src/agents/dispatch.js:44-71  dispatch()
-   match_reason: structural rank 2 - calls normalizeInput() before route()
-   signals: DENSE=7 STRUCTURAL=2
-
-3. 0.5533  src/utils/sanitize.js:3-19   stripControlChars()
-   match_reason: dense rank 3 - semantic neighbour of normalize
-   signals: DENSE=3
+ 1. src/utils/normalize.js:33-40  preprocessInput
+    signals dense #1 · sparse #2
+        why dense: function preprocessInput is a nearest neighbour of the query
+            embedding (rank 1); corroborated at sparse rank 2
+    33 export function preprocessInput(raw, options) {
+    ...
+                                                            score 0.0163
 ```
 
-Three ranked hits with real file paths, line ranges, scores, and a `match_reason` means the full stack works: chunking, all three indices, RRF, and the reranker. You are set up.
+Real file paths, real line ranges, a per-signal breakdown and a `match_reason` on every card means
+the full stack works: chunking, all three indices, RRF, hydration and the reranker.
+
+**Read the `score` against the header, not against an absolute scale.** A score near `0.01` is an
+RRF score (`1/(60+rank)`-scale) and means the cross-encoder did **not** run — it either was
+disabled, timed out, or had no artifact to load, and the run degraded to passthrough. A score in
+`[0, 1]` with meaningful spread is a calibrated rerank score. `axiom query --json` says which
+outright, in `score_field`: `"rrf_score"` or `"rerank_score"`. Two orders of magnitude separate
+them, and mistaking one for the other is how a demo accidentally overclaims.
 
 Finally, prove the degraded path also works — this is the configuration the judges may hit:
 
 ```bash
 AXIOM_LLM_ENABLED=false AXIOM_RERANKER_ENABLED=false \
-  axiom search "normalize input" --version smoke --index-root /tmp/axiom-smoke --top-k 3
-# query_type=SEMANTIC (heuristic)  passes=1  latency=214ms  reranker=off  llm=off
+  axiom query "normalize input" --version smoke --index-root /tmp/axiom-smoke --top-k 3
 ```
+
+Same three hits, a `(heuristic)` classifier tag, and a lower latency. `NFR-07` requires this path to
+be green at all times, not merely to exist.
 
 ---
 
@@ -681,6 +865,11 @@ AXIOM_LLM_ENABLED=false AXIOM_RERANKER_ENABLED=false \
 | `[Errno 98] Address already in use` on 8000 or 8501 | A previous `axiom serve` / `axiom ui` is still running | `lsof -ti:8000 \| xargs kill` (Linux/macOS) or `netstat -ano \| findstr :8000` then `taskkill /PID <pid> /F` (Windows). Or run on another port: `axiom serve --port 8010`. |
 | Search returns stale results, or `KeyError` on a chunk id after you changed the chunker | Index on disk was built by older code; chunk ids are content-derived and shifted | `axiom index <repo> --version-id <id> --force` to rebuild, or delete `$AXIOM_INDEX_ROOT/index/<version_id>/`. The manifest records `embedding_model`; a model change always requires a rebuild. |
 | Startup aborts with `embedding_dim mismatch: manifest=1024 model=384` | The index was built with Qwen3-0.6B but `AXIOM_EMBEDDING_MODEL` now points at MiniLM (or vice versa) | Either restore the original model or rebuild the index. Dimensions are not convertible. |
+| `No such command 'search'` | `axiom search` does not exist; the subcommand is `query` | `axiom query "<text>"`. Run `axiom --help` for the full list. |
+| `axiom --version` reports a usage error instead of a version | The global `--version` names an **index version id**, not the app version | `axiom --app-version`. |
+| `pytest: error: unrecognized arguments: --timeout=120` | `pytest-timeout` is not in the `dev` extra | Drop the flag (rung 3), or add `pytest-timeout` to `pyproject.toml`'s `dev` extra and re-sync. |
+| Every query scores around `0.01` and `score_field` reads `rrf_score` | The cross-encoder never ran: no INT8 artifact, `AXIOM_RERANKER_ENABLED=false`, or a rerank timeout | Run §6.1's export, or raise `AXIOM_RERANKER_TIMEOUT_MS`. Results are still ranked — by RRF — but no accuracy number measured here is quotable. |
+| Paraphrases are no closer than unrelated text, though `hidden` is 1024 | Wrong pooling or a missing query-side instruction envelope — the failure §6.4 exists to catch | Re-read §6.2, then re-run §6.4. Do not index anything until the margin is positive. |
 | `axiom: command not found` after a successful install | `pip install -e .` skipped (pip fallback path), or the venv is not activated | Activate (`.venv\Scripts\activate` on Windows — §2.3), then `pip install -e .`. Confirm with `which axiom` / `where axiom`. |
 | Streamlit UI loads but every query shows "API unreachable" | `axiom serve` not running, or `AXIOM_API_BASE_URL` points at the wrong host/port | Start the API first, then `curl -s localhost:8000/v1/health`. Inside Docker the UI must use the compose service name, not `127.0.0.1` — see [Deployment.md](Deployment.md) §3. |
 | First query after startup takes 20-40 s, later ones are fast | Cold model load: ONNX session construction + GGUF mmap happen lazily on first use | Expected. Warm the process before the demo: `curl -s localhost:8000/v1/health?warm=true`. Never let the jury trigger the cold path — see the demo runbook in [Deployment.md](Deployment.md) §7. |
@@ -692,9 +881,9 @@ AXIOM_LLM_ENABLED=false AXIOM_RERANKER_ENABLED=false \
 
 | You want to | Go to |
 |---|---|
-| Understand the pipeline you just installed | [Architecture.md](Architecture.md) |
+| Understand the pipeline you just installed | [Design.md](Design.md) |
 | Know the exact field names in results | [Schema.md](Schema.md) |
 | Call the API or the CLI | [API.md](API.md) |
 | Build a container, cut the release, or run the demo | [Deployment.md](Deployment.md) |
-| Reproduce the NDCG@10 number | [Evaluation.md](Evaluation.md) |
+| Reproduce the NDCG@10 number | [TestPlan.md](TestPlan.md) for the protocol; [Tracker.md](Tracker.md) for the run log |
 | Report something this doc did not cover | [OpenQuestions.md](OpenQuestions.md), as a new `OQ-##` |

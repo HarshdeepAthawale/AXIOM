@@ -1,10 +1,10 @@
 # Glossary
 
-Domain terms, acronyms, metric formulas, and project-specific jargon used across the PRISM documentation suite.
+Domain terms, acronyms, metric formulas, and project-specific jargon used across the Axiom documentation suite.
 
 **Owner:** Anish Grover
-**Last updated:** 2026-09-16
-**Status:** Draft
+**Last updated:** 2026-09-23
+**Status:** Active
 
 Related: [Rules.md](Rules.md) · [Schema.md](Schema.md) · [_CONTRACT.md](_CONTRACT.md) · [PRD.md](PRD.md) · [TechSpecifications.md](TechSpecifications.md) · [README.md](README.md)
 
@@ -62,40 +62,40 @@ results score above `0.20`. Both thresholds are `# PLACEHOLDER` values pending m
 ## Domain terms
 
 General code-retrieval and information-retrieval vocabulary used throughout the doc suite,
-independent of any PRISM/Axiom-specific naming. Where a fuller definition already exists elsewhere
+independent of any Axiom-specific naming. Where a fuller definition already exists elsewhere
 in this glossary, the entry here points at it rather than repeating it.
 
 **Chunk** — see [Chunking and content-addressing terms](#chunking-and-content-addressing-terms) below.
 
 **Embedding** — A fixed-length dense vector representation of a piece of text, produced by an
 embedder model such that texts with similar meaning produce vectors that are close together under
-some distance or similarity measure. PRISM's dense embedder produces 1024-dim vectors
+some distance or similarity measure. Axiom's dense embedder produces 1024-dim vectors
 (`Qwen/Qwen3-Embedding-0.6B`) or 384-dim vectors (the `all-MiniLM-L6-v2` fallback), L2-normalised
 before indexing. `_CONTRACT.md §2`.
 
 **Dense retrieval** — Retrieval by nearest-neighbour search over embedding vectors: the query is
 embedded with the same model as the corpus, and the chunks whose vectors are closest (by inner
 product over L2-normalised vectors — see *Cosine similarity vs. inner product* below) are returned.
-PRISM's `DENSE` signal. See [Schema.md §3.2](Schema.md#32-signalkind-semantics).
+Axiom's `DENSE` signal. See [Schema.md §3.2](Schema.md#32-signalkind-semantics).
 
 **Sparse retrieval** — Retrieval by lexical term matching and term-frequency weighting, implemented
 via BM25 (below). Finds exact and near-exact vocabulary overlap between query and chunk and has no
-notion of meaning beyond shared tokens. PRISM's `SPARSE` signal.
+notion of meaning beyond shared tokens. Axiom's `SPARSE` signal.
 
 **BM25 (Best Matching 25)** — see [Acronyms](#acronyms) below.
 
 **Cross-encoder vs. bi-encoder** — Two ways of scoring a (query, document) pair with a transformer.
-A **bi-encoder** (PRISM's dense embedder) encodes the query and the document *separately* into
+A **bi-encoder** (Axiom's dense embedder) encodes the query and the document *separately* into
 fixed vectors and compares them with a cheap similarity function — fast enough to run against an
 entire corpus, but the model never sees the query and document together. A **cross-encoder**
-(PRISM's reranker, `BAAI/bge-reranker-v2-m3`) encodes the query and document *jointly* in one
+(Axiom's reranker) encodes the query and document *jointly* in one
 forward pass and outputs a single relevance score — more accurate because the model can attend
 across the pair, but too slow to run against more than a small candidate set. This is exactly why
-PRISM retrieves broadly with the bi-encoder/lexical/structural signals first (`K=100`/`100`/`50`)
+Axiom retrieves broadly with the bi-encoder/lexical/structural signals first (`K=100`/`100`/`50`)
 and reranks only the fused top-25 with the cross-encoder. `_CONTRACT.md §2`, `_CONTRACT.md §5`.
 
-**Reranking** — The second-stage scoring pass that re-orders a small candidate set (PRISM: the
-fused top-25) using a more expensive, more accurate model (PRISM: the cross-encoder) than the
+**Reranking** — The second-stage scoring pass that re-orders a small candidate set (Axiom: the
+fused top-`fusion_top_n`) using a more expensive, more accurate model (Axiom: the cross-encoder) than the
 first-stage retrievers could afford to run against the whole corpus. See `FR-12`,
 [Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade) for the reranker's degradation
 ladder, and the **Passthrough** entry below for the well-formed degraded outcome when reranking
@@ -104,7 +104,7 @@ cannot run.
 **AST (Abstract Syntax Tree)** — see [Acronyms](#acronyms) below.
 
 **Call graph** — A directed graph whose nodes are functions/methods and whose edges represent
-"caller invokes callee," derived by PRISM purely from static AST analysis (source order, never
+"caller invokes callee," derived by Axiom purely from static AST analysis (source order, never
 execution) and stored as the `calls` relation in `structural.sqlite`. Answers query archetype Q2
 ("which files call X before Y") by a source-order comparison, never a runtime trace — see
 [`NG-15`](NonGoals.md#ng-15--no-code-execution-sandboxing-or-dynamic-analysis).
@@ -114,15 +114,15 @@ execution) and stored as the `calls` relation in `structural.sqlite`. Answers qu
 **Cosine similarity vs. inner product** — Two closely related vector similarity measures. Cosine
 similarity is the inner product of two vectors divided by the product of their magnitudes — i.e. it
 ignores vector length and measures only the angle between them. When vectors are **L2-normalised**
-(magnitude forced to 1, as every embedding in PRISM is — `_CONTRACT.md §2`), that division is a
+(magnitude forced to 1, as every embedding in Axiom is — `_CONTRACT.md §2`), that division is a
 no-op and inner product *equals* cosine similarity exactly. This is why FAISS
-`IndexFlatIP`/`IndexIVFPQ` inner-product search over PRISM's normalised vectors is already the
+`IndexFlatIP`/`IndexIVFPQ` inner-product search over Axiom's normalised vectors is already the
 correct higher-is-better relevance score, with no separate cosine step — see
 [Rules.md AP-10](Rules.md#ap-10--turning-a-distance-into-a-score-by-accident-rule-4).
 
-**Quantization (INT8)** — Reducing a model's numeric precision (PRISM: from fp32/bf16 weights down
+**Quantization (INT8)** — Reducing a model's numeric precision (Axiom: from fp32/bf16 weights down
 to 8-bit integers) to shrink memory footprint and speed up CPU inference, at a small, usually
-imperceptible accuracy cost. PRISM applies **post-training dynamic INT8 quantisation** (no
+imperceptible accuracy cost. Axiom applies **post-training dynamic INT8 quantisation** (no
 retraining) to the embedder and reranker via `optimum-cli`, exported to ONNX. See
 [Setup.md §6](Setup.md#6-onnx-export-and-int8-quantisation).
 
@@ -154,7 +154,7 @@ for why rank space was chosen over score space.
 
 **Rank-space fusion vs. score-space fusion** — Rank-space fusion (RRF) consumes only each
 candidate's *position* in a ranked list, never its raw score; score-space fusion would combine raw
-scores directly (e.g. a weighted sum of normalised scores). PRISM uses rank-space fusion because the
+scores directly (e.g. a weighted sum of normalised scores). Axiom uses rank-space fusion because the
 three signals' raw scores are on incomparable, differently-shaped distributions (bounded cosine,
 unbounded BM25, unbounded graph score) — see
 [Rules.md AP-02](Rules.md#ap-02--fusing-in-score-space-instead-of-rank-space-rule-4-contract-5) for
@@ -207,7 +207,7 @@ cross-version dedup, and zero-cost renames — see
 [Schema.md §13.1](Schema.md#131-why-chunk_id-includes-location-and-content_hash-does-not).
 
 **Content-addressing** — Identifying a piece of data by a hash of its own content rather than by
-where it is stored. PRISM content-addresses chunks twice (`chunk_id`, `content_hash`) for two
+where it is stored. Axiom content-addresses chunks twice (`chunk_id`, `content_hash`) for two
 different purposes — see the two entries above — and content-addresses embeddings once, by
 `content_hash`, as the blob-store key.
 
@@ -293,19 +293,39 @@ see `ADR-015`'s "Alternatives considered."
 | Sense | What it refers to |
 |---|---|
 | Samsung PRISM GenAI Hackathon | The **event** this project is submitted to — "Samsung PRISM GenAI Hackathon 3rd Edition," `_CONTRACT.md §0`. This sense of "PRISM" never changes and is not renamed; the organiser-mandated release tag `PRISM_GENAI_HACKATHON_Y2026` uses it. |
-| PRISM (former project name) | The project's **own name** before [`ADR-015`](Decisions.md#adr-015--rename-prism-to-axiom) renamed it to **Axiom**. Some file headers, the `Prism*` error class names (`PrismError` and its subclasses, [Rules.md §9.2](Rules.md#92-error-taxonomy)), and the `_CONTRACT.md §1` CLI entrypoint reference still carry this old sense as unpropagated residue — see [`OQ-04`](OpenQuestions.md#oq-04--project-name-collision-with-a-rival-submission)'s "Known residue" note and `T-201` in [Tracker.md](Tracker.md). |
+| PRISM (former project name) | The project's **own name** before [`ADR-015`](Decisions.md#adr-015--rename-prism-to-axiom) renamed it to **Axiom**. **The code carries none of this residue**: the package is `axiom`, the CLI entrypoint is `axiom`, the environment prefix is `AXIOM_`, the index directory is `.axiom/`, and the error taxonomy is `AxiomError` / `AxiomContractError` / `IndexNotFoundError` / `DegradationExhaustedError` — there is no `PrismError`. What residue remains is in prose headers and in `_CONTRACT.md §0/§1/§3`, tracked as `T-201` in [Tracker.md](Tracker.md). |
 
 When a document says "PRISM" without qualification, check which sense fits the sentence — the
 hackathon it never stops being submitted to, or the project name it no longer has.
 
 **Incognito** — The team name, `_CONTRACT.md §0`.
 
-**`eval.yaml` / `demo.yaml`** — the two named config profiles; see **Profile** under
+**Config profiles** — **five**, all committed under `configs/`: `default`, `fast`, `accurate`,
+`eval`, `demo`. `eval.yaml` and `demo.yaml` are the two that carry jury weight and they differ
+deliberately, including in their **primary reranker**: `eval.yaml` keeps `BAAI/bge-reranker-v2-m3`
+with a narrowed candidate chain because accuracy is what the screening gate scores and that run is
+offline and untimed; `demo.yaml` promotes `cross-encoder/ms-marco-MiniLM-L-6-v2` to primary because
+latency is what the jury watches. Neither is "the fallback". See **Profile** under
 [Versioning and evolutionary retrieval terms](#versioning-and-evolutionary-retrieval-terms) above.
 
-**CLI subcommand naming** — Some documents show `axiom query`, others (Setup.md's worked examples)
-show `axiom search`. See [API.md](API.md) for the canonical CLI subcommand name; this glossary does
-not adjudicate the discrepancy.
+**CLI subcommand naming** — The command is **`axiom query`**. There is no `axiom search`; any
+document showing one is stale against `src/axiom/cli.py`. The nine `FR-23` subcommands are `index`,
+`reindex`, `query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`; `version` exists only
+as a hidden alias of `versions`, and `gc` is a tenth command no requirement defines. See
+[TestPlan.md §2.1](TestPlan.md#21-cli-surface-as-built).
+
+**`artifacts/`** — The committed-artefact directory: `artifacts/experiments.csv` (the append-only
+experiment log), `artifacts/splits/` (the seeded tune/dev id lists), `artifacts/bench/` (benchmark
+rows). Distinct from **`data/`**, which is gitignored and holds downloaded models, vendored
+datasets and the demo repo. The distinction exists because
+[Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed) forbids committing from `data/`, and
+the submission runbook used to do exactly that.
+
+**Reportable run** — A full-split eval run that `scripts/run_eval.py` stamps
+`axiom_provenance.reportable: true`. A run is **not** reportable if it was `--limit`ed, made with an
+active `# PLACEHOLDER` constant, made on a dirty git tree, made with a degraded retrieval backend,
+or made with a resolved embedder that is not the configured one. Only a reportable run's number may
+be quoted — see [TestPlan.md §6.2](TestPlan.md#62-why-a-limited-run-is-never-a-reportable-score).
 
 ---
 
@@ -362,9 +382,13 @@ NDCG@10 = DCG@10 / IDCG@10
 ```
 
 `NDCG@10 = 0` when no relevant document appears in the top 10; `NDCG@10 = 1` for a perfect ranking.
-PRISM's target is `≥ 20.0` (reported on a 0–100 scale, i.e. `NDCG@10 × 100`), against a BGE-0.6B
-baseline of `14.7` — see [PRD.md §2](PRD.md#2-goals-and-success-metrics) for the full leaderboard
-context.
+Reported on a 0–100 scale, i.e. `NDCG@10 × 100`. **Axiom has no measured NDCG@10 as of
+2026-09-23** and therefore quotes no target here: the `≥ 20.0` figure earlier revisions carried was
+calibrated against a "BGE-0.6B = 14.7" baseline that appears in neither paper it was sourced to, and
+that baseline is withdrawn. The project's own dense-only full-split baseline is produced by
+[`T-026`](Tracker.md#22-retrieval-core-t-021t-060) and becomes the denominator for every gain
+claimed afterwards — see
+[ImplementationPlan.md §3.2](ImplementationPlan.md#32-no-gate-carries-an-absolute-ndcg-threshold-any-more).
 
 **MRR (Mean Reciprocal Rank)** — The secondary P0 metric: for each query, the reciprocal of the rank
 of the first relevant result (`0` if none appears in the returned list), averaged over all queries:
@@ -373,28 +397,30 @@ of the first relevant result (`0` if none appears in the returned list), average
 MRR = (1/|Q|) * Σ_{q∈Q}  1 / rank_of_first_relevant_result(q)
 ```
 
-PRISM's target is `≥ 22.0` (on the same 0–100 reporting scale). See
-[PRD.md §2](PRD.md#2-goals-and-success-metrics).
+Reported on the same 0–100 scale. Unmeasured as of 2026-09-23; see the note under NDCG@10 above.
 
 **Recall@100** — The first-stage recall ceiling: the fraction of queries for which at least one
 relevant document appears among the top 100 candidates *before* fusion and reranking narrow the
 list. This is the ceiling the reranker works under — a relevant document absent from the top 100
-cannot be recovered by any later stage. PRISM's target is `≥ 65.0`. See
-[PRD.md §2](PRD.md#2-goals-and-success-metrics).
+cannot be recovered by any later stage. Unmeasured as of 2026-09-23; see the note under NDCG@10
+above.
 
 **RRF score** — See [Retrieval and fusion terms](#retrieval-and-fusion-terms) above; reproduced here
 for completeness:
 
 ```
-score(d) = Σ_i  w_i / (k + rank_i(d)),   k = 60
+score(d) = Σ_i  w_i / (k + rank_i(d)),   k = settings.rrf_k (default 60)
 ```
 
 **Stability bonus** — See [Versioning and evolutionary retrieval terms](#versioning-and-evolutionary-retrieval-terms)
 above; reproduced here for completeness:
 
 ```
-final = base * (1 + 0.10 * stability)   [only when the family spans ≥ 2 versions]
+final = base * (1 + settings.stability_bonus * stability)   [only when the family spans ≥ 2 versions]
 ```
+
+`stability_bonus` defaults to `0.10` and is still `# PLACEHOLDER` — see
+[Tracker.md §5.1](Tracker.md#51-placeholder-replacement-log).
 
 ---
 

@@ -788,6 +788,16 @@ def main(
 # --------------------------------------------------------------------------
 
 
+@contextmanager
+def _no_worktree() -> Iterator[None]:
+    """Stand-in for :func:`worktree_at` when ``--at`` was not given.
+
+    Lets the index path use one ``with`` statement for both cases instead of
+    duplicating the build call under an if/else.
+    """
+    yield None
+
+
 @app.command("index")
 def index_command(
     ctx: typer.Context,
@@ -795,6 +805,15 @@ def index_command(
     version_id: Annotated[
         str | None,
         typer.Option("--version-id", help="Label for this build. Default: git sha, else vN."),
+    ] = None,
+    at_rev: Annotated[
+        str | None,
+        typer.Option(
+            "--at",
+            help="Index the repo as it stood at this git ref (tag, branch or sha), "
+            "instead of the working tree. Required to build an index of a past "
+            "release (US-7, FR-20) and to give FR-21's families distinct members.",
+        ),
     ] = None,
     force: Annotated[
         bool, typer.Option("--force", help="Rebuild even if this version id already exists.")
@@ -842,19 +861,49 @@ def index_command(
                 remediation=f"axiom index {root} --version-id {resolved_id} --force",
             )
 
-        report = pipeline.build_index_detailed(
-            root,
-            resolved_id,
-            settings,
-            make_active=not no_activate,
-            commit_sha=sha,
-            parent_version=parent,
-        )
+        from axiom.versioning.checkout import worktree_at
+
+        # `--at` swaps the tree we read without touching the user's checkout.
+        # When it cannot be honoured the context yields None and we index the
+        # working tree instead, saying so -- a stale ref must not be silently
+        # indexed as if it were the requested release (Rule 3).
+        with worktree_at(root, at_rev) if at_rev else _no_worktree() as materialised:
+            if at_rev and materialised is None:
+                _fail(
+                    EXIT_USAGE,
+                    ERROR_VALIDATION,
+                    f"could not materialise {at_rev!r} from {root}",
+                    json_output=json_output,
+                    remediation=f"git -C {root} tag --list   # check the ref exists",
+                )
+            source = materialised or root
+            if materialised is not None:
+                # Stamp the commit the ref actually names; otherwise every
+                # historical index would claim HEAD's sha and the manifest
+                # chain would be a lie.
+                from axiom.versioning.checkout import resolve_ref
+
+                resolved_ref = resolve_ref(root, at_rev) if at_rev else None
+                if resolved_ref is not None:
+                    sha = resolved_ref[0]
+            if materialised is not None and version_id is None:
+                # The label should name the release, not the detached sha the
+                # worktree happens to sit on.
+                resolved_id = at_rev or resolved_id
+            report = pipeline.build_index_detailed(
+                source,
+                resolved_id,
+                settings,
+                make_active=not no_activate,
+                commit_sha=sha,
+                parent_version=parent,
+            )
 
         if json_output:
             _emit_json(report.as_dict())
             return
-        _echo(f"indexed {root} as version {report.manifest.version_id}")
+        shown = f"{root}@{at_rev}" if at_rev else str(root)
+        _echo(f"indexed {shown} as version {report.manifest.version_id}")
         _echo(f"  chunks     {report.chunk_count} from {report.file_count} file(s)")
         _echo(
             f"  embedder   {report.manifest.embedding_model} (dim {report.manifest.embedding_dim})"

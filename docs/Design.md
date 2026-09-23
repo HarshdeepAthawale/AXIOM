@@ -1,9 +1,9 @@
 # Design
 
-Architecture, design principles, the concurrency model, the degradation ladder as a structural concept, and the extension points PRISM was built to accept.
+Architecture, design principles, the concurrency model, the degradation ladder as a structural concept, and the extension points Axiom was built to accept.
 
 **Owner:** Anish Grover
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [PRD.md](PRD.md) · [TechSpecifications.md](TechSpecifications.md) · [Schema.md](Schema.md) · [Appflow.md](Appflow.md) · [Rules.md](Rules.md) · [Decisions.md](Decisions.md) · [NonGoals.md](NonGoals.md) · [TestPlan.md](TestPlan.md)
@@ -34,7 +34,7 @@ each time.
 |---|---|---|
 | **Retrieve, do not generate.** The system never emits a token of code it did not read from disk. | [NonGoals.md NG-01](NonGoals.md#ng-01--no-code-generation)–`NG-03` | LLM-authored snippets, prose summaries, autofix diffs |
 | **Rank in rank space, never in an invented shared score space.** Three signals with three incomparable score domains fuse by position, not by magnitude. | [Rules.md Rule 4](Rules.md#rule-4--higher-is-better-lists-are-sorted-descending); [`ADR-002`](Decisions.md#adr-002--weighted-reciprocal-rank-fusion-over-score-space-fusion) | Min-max normalisation, learned score blending, any cross-signal score comparison |
-| **Every stage is pure and every failure degrades.** Same input plus same config yields the same output, forever; a stage that cannot complete returns a typed empty result instead of dying mid-run. | [Rules.md Rule 2](Rules.md#rule-2--stages-are-pure), [Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade) | Hidden mutable state, unbounded retries, an eval run that can die at query 9,000 of 3,765 |
+| **Every stage is pure and every failure degrades.** Same input plus same config yields the same output, forever; a stage that cannot complete returns a typed empty result instead of dying mid-run. | [Rules.md Rule 2](Rules.md#rule-2--stages-are-pure), [Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade) | Hidden mutable state, unbounded retries, an eval run that can die at query 3,200 of 3,765 |
 | **Corpus size must never reach the LLM.** The query LLM classifies, expands, decomposes, and judges sufficiency from scores — never from code. | [NonGoals.md NG-23](NonGoals.md#ng-23--no-llm-ingestion-of-retrieved-code); [`ADR-008`](Decisions.md#adr-008--the-query-llm-never-reads-code) | Any code path where a bigger repo makes the agent loop slower or less deterministic |
 
 These four principles are why the architecture below has the shape it has: a wide, parallel
@@ -206,21 +206,42 @@ around the same concurrent fan-out**. Each pass through Stage 2–5 in §3.1 is 
 three-way concurrent lookup, re-run with a revised `QueryPlan`. Concretely:
 
 ```
-deadline = monotonic() + settings.agent_wall_clock_budget_s      # 5.0 s
+deadline = Deadline(settings.agent_wall_clock_ms)                # 5000 ms, monotonic
+max_passes = max(1, agent_max_passes if agent_enabled else 1)    # 2; the eval profile forces 1
 best = None
-for pass_no in range(1, settings.agent_max_passes + 1):          # max 2
-    if monotonic() >= deadline:
+for pass_no in range(1, max_passes + 1):                         # 2 TOTAL cycles, not 2 + 1
+    if pass_no > 1 and deadline.expired:                         # pass 1 is EXEMPT
         break
-    scored_lists = concurrent_fan_out(plan)      # Stage 2, thread pool of 3
+    scored_lists = concurrent_fan_out(plan)      # Stage 2, thread pool, per effective_query
     fused = reciprocal_rank_fusion(scored_lists, plan.strategy_weights)  # Stage 3
-    reranked = cross_encoder.rerank(plan.original_query, fused)          # Stage 4
-    if best is None or top1(reranked) > top1(best):
-        best = reranked
-    if evaluator.assess_sufficiency(reranked):    # Stage 5
+    if pass_no > 1 and deadline.expired:         # abandon BEFORE the reranker, ~80% of the cost
         break
-    plan = planner.refine(plan, reranked)         # only reached if insufficient
+    chunks = hydrate(fused)
+    reranked = cross_encoder.rerank(plan.original_query, fused, chunks)  # Stage 4
+    if best is None or quality(reranked) > quality(best):
+        best = reranked                          # quality = (cross_encoder_ran, top1)
+    if evaluator.is_sufficient(reranked):         # Stage 5
+        break
+    plan = planner.next_plan(plan, reranked)      # only reached if insufficient
+    if plan is unchanged:                         # nothing new to try -> stop
+        break
 return formatter(best)                             # Stage 6
 ```
+
+Three details of that block are load-bearing and were wrong in the previous revision:
+
+1. **`agent_max_passes = 2` means two total cycles**, one initial retrieval and at most one
+   refinement. It is not two refinements on top of an initial pass.
+   [Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5)'s reference block seeds
+   `best` from a retrieval taken *outside* the loop and so implies three; on this point Rules.md is
+   the document that must change, not this one. Since rerank dominates a pass's cost, the difference
+   is a ~50% swing in p95.
+2. **Pass 1 is exempt from the deadline.** Checking the budget at the top of *every* pass, as the
+   previous block did, means a query issued with an already-exhausted budget returns nothing at all.
+   A query must return something; a zero-length budget degrades to one pass, not to an empty answer.
+3. **Passes are compared on `(cross_encoder_ran, top1)`, not on `top1` alone.** A passthrough pass's
+   RRF score (~0.016) and a cross-encoder pass's score (~0.71) are different quantities, so a
+   raw-magnitude comparison would discard a better-but-uncalibrated pass every time.
 
 This is why the concurrency model and the agent loop are one design decision, not two: a widened
 `agent_max_passes` multiplies the cost of the *entire* concurrent fan-out plus rerank, not just one
@@ -311,10 +332,13 @@ value it replaces, only a less informative one.
 ### 6.3 Where raising is still correct
 
 Three categories never degrade — see [Rules.md Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade)'s
-exception list: contract violations (`PrismContractError`), configuration errors
-(`PrismConfigError`, at startup), and missing index artefacts at startup (`PrismIndexError`). These
+exception list: contract violations (`AxiomContractError`), configuration errors (a Pydantic
+`ValidationError` at startup), and missing index artefacts at startup (`IndexNotFoundError`). These
 are not points on the ladder at all; they are pre-conditions for the ladder existing in the first
-place. A `PrismContractError` mid-run means the type-preservation guarantee in §6.2 has already been
+place. (`src/axiom/core/errors.py` defines exactly four classes — `AxiomError`,
+`AxiomContractError`, `IndexNotFoundError`, `DegradationExhaustedError`; where `Rules.md §9.2`
+enumerates a seven-class taxonomy, that document names classes the code does not define. Flagged for
+the Rules.md owner.) An `AxiomContractError` mid-run means the type-preservation guarantee in §6.2 has already been
 violated somewhere upstream, and continuing to degrade past that point would just be manufacturing a
 plausible-looking wrong answer — which is precisely the `0.0`-NDCG@10-with-no-error failure mode
 [Rules.md Rule 1](Rules.md#rule-1--ids-are-sacred) spends its longest passage warning about.
@@ -419,7 +443,7 @@ not assume they are as cheap as §8.1–§8.3:
   not obviously more or less relevant than "one hop away in the other direction," and that scoring
   question has no answer yet, unlike the additive signal/language cases above where the *mechanism*
   is well understood and only the *content* is new.
-- **Multi-hop agent planning beyond 2 passes.** As §5.2 shows, this is not "add a third loop
+- **Multi-hop agent planning beyond 2 total passes.** As §5.2 shows, this is not "add a third loop
   iteration" — it multiplies the full concurrent-fan-out-plus-rerank cost, and the 5-second wall-clock
   budget in `NFR-04` cannot fund it without a faster reranker first ([NonGoals.md §4](NonGoals.md#4-deferred-not-rejected)
   names this dependency explicitly). This extension point is gated on a *different* extension (a

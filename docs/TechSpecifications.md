@@ -3,7 +3,7 @@
 Component-by-component engineering spec for Axiom: runtime, model stack, per-module responsibilities, algorithm constants, and the config reference. The mechanics, not the rationale — see [Design.md](Design.md) for why the system is shaped this way.
 
 **Owner:** Prabinder Singh
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [_CONTRACT.md](_CONTRACT.md) · [Schema.md](Schema.md) · [Design.md](Design.md) · [Appflow.md](Appflow.md) · [Rules.md](Rules.md) · [Setup.md](Setup.md) · [PRD.md](PRD.md) · [Decisions.md](Decisions.md) · [OpenQuestions.md](OpenQuestions.md) · [TestPlan.md](TestPlan.md)
@@ -15,11 +15,15 @@ Related: [_CONTRACT.md](_CONTRACT.md) · [Schema.md](Schema.md) · [Design.md](D
 This document is the mechanical reference: what each module does, what it consumes and produces,
 and the exact value of every algorithm constant. [Design.md](Design.md) owns *why* the system has
 three signals and a bounded agent loop instead of some other shape; this document owns *how* each
-piece computes what it computes. Where a constant here is a measured value, it cites the ADR that
-locked it. Where a constant is still a design estimate, it says so explicitly and points at the
-tracking `OQ-##`/`T-###` pair — per the `# PLACEHOLDER` convention in
-[Rules.md §8](Rules.md#8-the-placeholder-convention), an unmarked placeholder in this document is a
-defect.
+piece computes what it computes.
+
+**Number-provenance rule (binding as of 2026-09-23).** Every quantity in this document is one of
+three things and says which: **measured** (a run exists; the run is named), **estimated** (derived
+by stated arithmetic from a stated premise; the arithmetic is shown), or **`# PLACEHOLDER`** (a
+guess awaiting a measurement, carrying an owning `OQ-##`/`T-###` pair per the convention in
+[Rules.md §8](Rules.md#8-the-placeholder-convention)). An unmarked placeholder in this document is a
+defect. **As of this revision there are no measured latency, throughput or memory figures anywhere
+in the project** — §8 is entirely estimate and placeholder, and says so in its own heading.
 
 Per [README.md](README.md#where-things-live--canonical-ownership): this document owns algorithm
 constants (RRF `k`, candidate widths, weights, thresholds). [Setup.md](Setup.md) owns environment
@@ -89,7 +93,7 @@ parameter budget for the APPS task shape — see
 [OpenQuestions.md OQ-03](OpenQuestions.md#oq-03--is-qwen3-embedding-06b-the-right-embedder-for-apps).
 The model identity is asserted at query time against `VersionManifest.embedding_model` and
 `embedding_dim` ([Schema.md §12](Schema.md#12-versionmanifest)); a mismatch is a hard
-`PrismContractError`, never a silent fallback.
+`AxiomContractError`, never a silent fallback.
 
 ### 3.1 Dense embedder
 
@@ -102,7 +106,7 @@ query time always encodes one short sequence per (sub-)query.
 **Fallback:** `sentence-transformers/all-MiniLM-L6-v2`, dim 384, set via `AXIOM_EMBEDDING_MODEL`.
 Switching models changes `VersionManifest.embedding_dim`, which forces a cold rebuild into a new
 `version_id` — blobs are model-scoped (§7.5) and a dimension mismatch on load is a hard
-`PrismContractError` ([Rules.md AP-09](Rules.md#ap-09--cache-keyed-by-anything-other-than-content-rule-2)).
+`AxiomContractError` ([Rules.md AP-09](Rules.md#ap-09--cache-keyed-by-anything-other-than-content-rule-2)).
 
 **Degradation trigger** (from [Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade)'s
 ladder table, `axiom.retrieval.dense:search`): bad input is *"query embedding fails, index
@@ -112,12 +116,23 @@ redistributes its weight over the remaining signals.
 
 ### 3.2 Cross-encoder reranker
 
-**Used for:** scoring the 25 fused candidates jointly with the query text, producing
+**Used for:** scoring the fused candidates jointly with the query text, producing
 `FusedResult.rerank_score` in `[0, 1]` ([Schema.md §8](Schema.md#8-fusedresult)). This is the
-dominant latency cost in the pipeline — 620 ms of the 768 ms measured p50 (§8) — because it runs one
-forward pass per (query, candidate) pair rather than one pass total.
+dominant latency cost in the pipeline — by roughly an order of magnitude over every other query
+stage combined — because it runs one forward pass per (query, candidate) pair rather than one pass
+total. No stage figure in this document is a measurement; see §8.
 
-**Fallback:** `cross-encoder/ms-marco-MiniLM-L-6-v2`, set via `AXIOM_RERANKER_MODEL`.
+**Two primaries, one per profile (binding, see §8.1 for the arithmetic).** There is no single
+"primary reranker" any more, because the accuracy-scored run and the latency-watched run have
+different constraints:
+
+| Profile | Reranker | `fusion_top_n` | `rerank_max_chars` | Why |
+|---|---|---|---|---|
+| `eval` (`configs/eval.yaml`) | `BAAI/bge-reranker-v2-m3` | 5 | 1024 | Accuracy is what is scored; the run is offline and untimed. The cost is bought back by narrowing the candidate chain, not by weakening the model. **No latency number from this profile may be quoted against `NFR-03`/`NFR-04`.** |
+| `demo` (`configs/demo.yaml`), `default` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | 25 | 4096 | Latency is what the jury watches. ~25x cheaper per pair than bge (§8.1). |
+
+`AXIOM_RERANKER_MODEL` overrides either. `all-MiniLM`-class models remain the declared degradation
+target when neither loads (`NFR-07`).
 
 **Degradation trigger** (`axiom.rerank.cross_encoder:rerank`): bad input is *"model load failure,
 sequence too long"*; the ladder is *"cross-encode → truncate to model max length and cross-encode →
@@ -347,7 +362,7 @@ states the *rule* that this table is mandatory and enforced at review, this docu
 Passthrough and empty-but-typed results are first-class outcomes, never errors — a consumer can
 always tell degradation happened because the result shape stays well-formed
 ([Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade)). The three categories where
-raising *is* correct — `PrismContractError`, `PrismConfigError`, `PrismIndexError` — are programmer
+raising *is* correct — `AxiomContractError`, `IndexNotFoundError`, `DegradationExhaustedError` — are programmer
 error or contract violation, never bad query input; full taxonomy in
 [Rules.md §9.2](Rules.md#92-error-taxonomy).
 
@@ -368,7 +383,7 @@ named by `AXIOM_PROFILE`, layered under CLI flag > env var > profile YAML > fiel
 ([Rules.md §7](Rules.md#7-configuration-discipline)).
 
 **Inputs:** `configs/*.yaml`, process environment, CLI flags. **Outputs:** a frozen `Settings`
-instance. **Degradation:** none — malformed settings raise `PrismConfigError` at startup, one of the
+instance. **Degradation:** none — malformed settings raise a Pydantic `ValidationError` at startup, one of the
 three categories where raising is correct ([Rules.md Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade)).
 
 ### 4.2 `schema/`
@@ -387,7 +402,7 @@ error taxonomy ([Rules.md §9.2](Rules.md#92-error-taxonomy)), and hashing
 [Schema.md §13](Schema.md#13-identity-and-hashing)). `core/ranking.py` holds the single canonical
 `rank_key` function every ranker uses ([Rules.md Rule 4](Rules.md#rule-4--higher-is-better-lists-are-sorted-descending)).
 
-**Degradation:** N/A — `core/` never touches external input; a bug here is a `PrismContractError`
+**Degradation:** N/A — `core/` never touches external input; a bug here is a `AxiomContractError`
 by construction.
 
 ### 4.4 `chunking/`
@@ -467,7 +482,7 @@ Four builders, each consuming `list[Chunk]` and writing to the on-disk layout in
 `manifest.py` is also where the content-addressed embedding cache is enforced — the one sanctioned
 exception to stage purity ([Rules.md Rule 2](Rules.md#rule-2--stages-are-pure)): a cache entry is
 invalidated by model identity, never by time, and a dimension mismatch is a hard
-`PrismContractError` (see [Rules.md AP-09](Rules.md#ap-09--cache-keyed-by-anything-other-than-content-rule-2)).
+`AxiomContractError` (see [Rules.md AP-09](Rules.md#ap-09--cache-keyed-by-anything-other-than-content-rule-2)).
 
 `structural.py` builds the four-relation SQLite schema locked by
 [ADR-011](Decisions.md#adr-011--sqlite-for-the-structural-index-not-a-graph-database): `symbols`
@@ -508,9 +523,9 @@ Five modules, none of which reads chunk text into the LLM (§3.3, [ADR-008](Deci
 | Module | Responsibility | Degradation ladder |
 |---|---|---|
 | `classifier.py` | Classify into `QueryType` (§3.3.1) | LLM classification → heuristic rule engine (regexes) → `HYBRID` with equal weights |
-| `planner.py` | Identifier extraction (§3.3.2), expansion (§3.3.3), decomposition (§3.3.4) into `QueryPlan` | LLM plan → single-sub-query plan containing the original query verbatim |
+| `planner.py` | Identifier extraction (§3.3.2), expansion (§3.3.3), decomposition (§3.3.4) into `QueryPlan` | LLM plan → heuristic plan with `sub_queries = []`; `effective_queries` then yields the original query (§5.1.4). `sub_queries` is **never** filled with `[original_query]`. |
 | `evaluator.py` | Sufficiency predicate over `FusedResult` scores (§3.3.4, §5.3) | rerank-score predicate → RRF-score predicate → declare sufficient (never loop blindly) |
-| `loop.py` | Orchestrates classify → plan → retrieve → fuse → rerank → evaluate → (refine) | budget exhausted or a pass raises → return best results seen so far, `passes_used` recorded |
+| `loop.py` | Orchestrates plan → (retrieve → fuse → hydrate → rerank → evaluate → refine) x ≤ `max_passes` **total** (§5.3) | budget exhausted or a pass raises → return the best pass seen so far with `stop_reason` in {`budget_exhausted`, `pass_failed`}; never raises |
 | `llm.py` | `llama-cpp-python` adapter, `temperature=0.0`, fixed seed and `n_ctx` | LLM unavailable → the four heuristic paths above take over per-caller |
 
 §5.3 gives the exact loop bound and sufficiency trigger.
@@ -532,7 +547,7 @@ the exact algorithms.
 **Responsibility:** `mteb_adapter.py` wraps the full pipeline as an MTEB `AbsEncoder`; `metrics.py`
 computes NDCG@10/MRR/Recall@100. The adapter is the one place in the codebase where raising on a
 contract violation is mandatory and unconditional: every emitted id is asserted to be a member of
-the corpus id set *before* MTEB sees it, raising `PrismContractError` otherwise
+the corpus id set *before* MTEB sees it, raising `AxiomContractError` otherwise
 ([Rules.md Rule 1](Rules.md#rule-1--ids-are-sacred)). See [Setup.md §4.4](Setup.md#44-mteb-v2-is-required--not-v1)
 for the exact MTEB v2 API surface this module targets.
 
@@ -543,16 +558,18 @@ for the exact MTEB v2 API surface this module targets.
 `POST /query`, `GET /versions`, `GET /chunk/{chunk_id}`, `GET /health`
 ([FR-24](PRD.md#5-functional-requirements)). `ui/streamlit_app.py` renders result cards with
 per-signal rank breakdown and the agent-pass indicator ([FR-25](PRD.md#5-functional-requirements)).
-`cli.py` is the `typer` entrypoint with subcommands `index`, `reindex`, `query`, `classify`,
-`versions`, `families`, `eval`, `serve`, `ui` — every subcommand supports `--json`
-([FR-23](PRD.md#5-functional-requirements)).
+`cli.py` is the `typer` entrypoint **`axiom`**, with subcommands `index`, `reindex`, `query`,
+`classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc` — plus `version` as a hidden alias
+of `versions`. Every subcommand supports `--json` ([FR-23](PRD.md#5-functional-requirements)).
 
-**CLI naming note:** `_CONTRACT.md §1` names the entrypoint `prism`; [Setup.md](Setup.md) and
-[TestPlan.md](TestPlan.md) already invoke it as `axiom`. This document uses `axiom`, consistent with
-the majority of already-written docs and with the package import root `src/axiom/`. The
-inconsistency is tracked and will be fully resolved by `T-201`
-([ADR-015](Decisions.md#adr-015--rename-prism-to-axiom)); do not "fix" it here by editing other
-files.
+**CLI naming note — resolved 2026-09-23.** The entrypoint is `axiom`, the import root is
+`src/axiom/`, the env prefix is `AXIOM_`, and the index root is `.axiom/`, per
+[ADR-015](Decisions.md#adr-015--rename-prism-to-axiom) (Accepted) and the project owner's binding
+decision. `_CONTRACT.md §0/§1/§3` carried the pre-rename spellings until 2026-09-23 and has been
+corrected to match; the contract was the stale document on this axis, not the twenty-one docs that
+disagreed with it. The release tag
+`PRISM_GENAI_HACKATHON_Y2026` is organiser-prescribed and unaffected; "Samsung PRISM" remains the
+name of the *event*.
 
 **Degradation:** none of the three layers degrades on its own — they surface whatever the pipeline
 underneath already degraded to, and report which fallback was active
@@ -612,6 +629,52 @@ structural build step is skipped, since APPS documents have no cross-file struct
 [`OQ-02`](OpenQuestions.md#oq-02--what-is-the-exact-sparse-weight-in-configseval-yaml), swept by
 `T-112`.
 
+#### 5.1.4 Sub-query fan-out and its fusion arithmetic
+
+`FR-03` decomposes a compound query into at most **3** ordered `sub_queries`. The bound is **3**,
+not 4: `MAX_SUB_QUERIES = 3` in `agent/planner.py`, and each sub-query costs a full three-signal
+fan-out. ([Schema.md §10](Schema.md#10-queryplan) still carries `len <= 4`; that is a defect in
+Schema.md, and 3 is the binding value.)
+
+`QueryPlan.sub_queries` is **empty** on the ordinary single-query path — it is not filled with
+`[original_query]`. `QueryPlan.effective_queries` is the derived property the fan-out actually
+iterates, and it returns `self.sub_queries or [self.original_query]`. A test asserting
+`sub_queries == [original_query]` is asserting against the wrong field.
+
+Merging is **per signal, across sub-queries, before cross-signal RRF**
+(`retrieval/fusion.py:merge_ranked_lists` / `merge_signal_results`). For one signal `i`:
+
+```
+merged_score(d, i) = Σ_q  1 / (k + rank_q,i(d))         k = AXIOM_RRF_K (60)
+```
+
+- Every sub-query `q` is weighted **equally**. No document assigns sub-queries relative importance
+  and inventing a decay would be a magic number
+  ([Rules.md AP-07](Rules.md#ap-07--hardcoded-tunables-at-the-callsite-rule-7)).
+- Candidates are deduped by `chunk_id`; a chunk found by two sub-queries accumulates both terms.
+- The merged list is sorted by the canonical key `(-score, chunk_id)`, truncated to that signal's
+  own candidate width (100 / 100 / 50 — §5.2, *not* widened by fan-out), and given **contiguous
+  1-indexed ranks** starting at 1.
+- **A single input list is returned untouched.** The common one-query path therefore pays no
+  re-scoring and the retriever's own ordering is not perturbed.
+- Empty lists are dropped before merging; if every list is empty the signal is absent, which is what
+  §5.1.2's renormalisation consumes.
+
+Two consequences worth stating because they are easy to get wrong:
+
+1. **`strategy_weights`, `contributions` and Schema invariant 10 are untouched.** By the time
+   `reciprocal_rank_fusion` runs, a decomposed query looks exactly like a single query: one ranked
+   list per signal, contiguous ranks. Cross-signal weights still sum to 1.0.
+2. **The merged `score` field is an RRF score, not the signal's native score.** This is the one
+   place in the pipeline where `ScoredChunk.score`'s "signal-native" promise is relaxed, and it is
+   deliberate. Nothing downstream reads it — fusion is rank-space (`TC-051`).
+
+The same function merges across **versions** for `--all-versions` (§5.6): structurally it is the
+identical problem. With `V` versions and `Q` sub-queries the pre-merge pool is
+`V x Q x (100 + 100 + 50)` candidates; after merging it is back to `100 + 100 + 50`, so the
+`fusion_top_n` chain in §5.2 is unaffected. The pre-merge pool is, however, the term that makes a
+3-sub-query query up to 3x the retrieval cost of a 1-query query, which §8 accounts for.
+
 ### 5.2 Candidate width chain
 
 Locked in `_CONTRACT.md §5`, restated in [PRD.md §8](PRD.md#8-jury-scoring-alignment) as the
@@ -636,19 +699,70 @@ Widths are `Settings` fields, never hardcoded at a callsite
 
 ### 5.3 Agent loop bound
 
+**Pass semantics, stated once and binding.** `AXIOM_AGENT_MAX_PASSES` bounds the **total** number of
+retrieve → fuse → hydrate → rerank cycles, *initial pass included*. `max_passes = 2` therefore means
+**two cycles: one initial retrieval and at most one refinement.** Not three.
+`agent_enabled = false` (the `eval` profile) collapses the loop to **exactly one** pass — refinement
+is the ablation, not the retrieval. This is what `agent/loop.py:run` implements, and it is the
+reading `Design.md §5.2`, `Appflow.md` Flow 3, `API.md` (`passes_used`) and
+[ADR-007](Decisions.md#adr-007--bounded-agent-loop-hard-caps-not-convergence) already carry. Where
+[Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5)'s reference block seeds
+`best` from a retrieval taken *outside* the loop and so implies three cycles, Rules.md is the
+document that must change.
+
+The loop as implemented (`agent/loop.py:run`, transcribed, not paraphrased):
+
 ```
-deadline = monotonic() + AXIOM_AGENT_WALL_CLOCK_MS / 1000     # 5.0 s
-for pass_no in 1..AXIOM_AGENT_MAX_PASSES:                     # 2
-    if sufficient(best) or monotonic() >= deadline: break
-    plan = refine(plan, best)
-    candidate = retrieve(plan)
-    if top1(candidate) > top1(best): best = candidate
-return best
+deadline   = Deadline(settings.agent_wall_clock_ms)          # 5000 ms, monotonic
+max_passes = max(1, agent_max_passes if agent_enabled else 1)
+best = None
+
+plan = build_plan(query)                                     # once; never re-run per pass
+if not normalise_query(query):                               # empty/whitespace query
+    return empty_outcome(stop_reason="empty_query")          # never raises (Rule 3)
+
+for pass_no in 1 .. max_passes:
+    if pass_no > 1 and deadline.expired:                     # pass 1 is EXEMPT
+        stop_reason = "budget_exhausted"; break
+    candidate = fan_out(plan) -> fuse -> [deadline check] -> hydrate -> rerank
+        # the mid-pass check fires only when pass_no > 1; it abandons the pass
+        # BEFORE the reranker, which is ~80% of a pass's cost (TC-088)
+    if candidate is None:        stop_reason = "budget_exhausted"; break
+    if candidate raised:         stop_reason = "pass_failed";      break
+    if best is None or candidate.quality > best.quality: best = candidate
+    if candidate.sufficient:     stop_reason = "sufficient";  break
+    if pass_no == max_passes:    stop_reason = "max_passes";  break
+    if deadline.expired:         stop_reason = "budget_exhausted"; break
+    plan = next_plan(plan, candidate.results)
+    if plan is unchanged:        stop_reason = "no_new_query"; break
+return best                                                  # best-of, not last
 ```
 
-Reference implementation in [Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5);
-bound justified in [ADR-007](Decisions.md#adr-007--bounded-agent-loop-hard-caps-not-convergence).
-Termination on adversarial input is `TestPlan.md TC-086`, a P0 test.
+Five things terminate it, and the loop is correct if **any one** fires: the pass counter, the
+monotonic deadline (checked in three places), the sufficiency predicate, the planner reporting its
+rewrite is identical to the query already run, and a pass raising. `TestPlan.md TC-086` (P0) drives
+it with a 10,000-character query, an empty corpus and a scorer rigged never to satisfy sufficiency,
+and requires termination anyway — so no exit condition may depend on retrieval quality improving.
+
+**Deadline placement.** The budget is checked *before* starting a pass, never after finishing one.
+Checking afterwards would let a pass that began at 4.9 s run to completion and report a 9 s query as
+within budget. **Pass 1 is exempt** from every deadline check: a query must return *something*, so a
+zero-length or already-exhausted budget degrades to one pass rather than to an empty answer.
+
+**`stop_reason` vocabulary** (`agent/loop.py`, surfaced in `--json`): `sufficient`, `max_passes`,
+`budget_exhausted`, `no_new_query`, `empty_query`, `pass_failed`.
+
+**Best-of, not last.** A refinement is a hypothesis, not an improvement. Passes are compared on the
+key `(calibrated, top1)` where `calibrated = 1` if that pass's cross-encoder actually ran and `0` if
+it degraded to passthrough. A passthrough pass's RRF score (~0.016) and a cross-encoder pass's score
+(~0.71) are different quantities; comparing them on magnitude alone would make the passthrough pass
+lose every time regardless of whether it was better. Only *within* the same rung does raw top-1
+decide — which is what `Design.md §5.2`'s "pass 2 is only preferred if it measurably is" means
+operationally.
+
+**What is *not* re-run on a refinement pass:** classification. `QueryPlan.query_type` and
+`original_query` are carried over verbatim (`Schema.md §10`: "identical across all passes of one
+request"); `next_plan` revises only `sub_queries`, `extracted_identifiers` and `expansion_terms`.
 
 **Sufficiency trigger** (`agent/evaluator.py`): refine when top-1 `rerank_score < 0.35` **or** fewer
 than 3 results score above `0.20`. Both thresholds are `PLACEHOLDER` — this is the exact worked
@@ -662,11 +776,14 @@ only the score field changes.
 
 | Constant | Value | Env var | Status |
 |---|---|---|---|
-| Max refinement passes | 2 | `AXIOM_AGENT_MAX_PASSES` | Locked |
+| Max **total** passes (initial included) | 2 | `AXIOM_AGENT_MAX_PASSES` | Locked |
 | Wall-clock budget | 5000 ms | `AXIOM_AGENT_WALL_CLOCK_MS` | Locked |
 | Sufficiency top-1 threshold | 0.35 | `AXIOM_AGENT_SUFFICIENCY_TOP1` | `PLACEHOLDER`, `OQ-10` |
 | Sufficiency floor | 0.20 | `AXIOM_AGENT_SUFFICIENCY_FLOOR` | `PLACEHOLDER`, `OQ-10` |
 | Sufficiency min results above floor | 3 | `AXIOM_AGENT_SUFFICIENCY_MIN_RESULTS` | Locked |
+
+Bound justified in [ADR-007](Decisions.md#adr-007--bounded-agent-loop-hard-caps-not-convergence).
+Termination on adversarial input is `TestPlan.md TC-086`, a P0 test.
 
 ### 5.4 Chunking targets
 
@@ -766,7 +883,10 @@ it at runtime (as opposed to the doc section that documents it):
 | Dense candidate width | `AXIOM_DENSE_TOP_K` | 100 | `retrieval/dense.py` |
 | Sparse candidate width | `AXIOM_SPARSE_TOP_K` | 100 | `retrieval/sparse.py` |
 | Structural candidate width | `AXIOM_STRUCTURAL_TOP_K` | 50 | `retrieval/structural.py` |
-| Post-fusion width | `AXIOM_FUSION_TOP_N` | 25 | `retrieval/fusion.py` |
+| Post-fusion width | `AXIOM_FUSION_TOP_N` | 25 (**5** under `configs/eval.yaml`, §8.2) | `retrieval/fusion.py` |
+| Reranker document truncation window | `AXIOM_RERANK_MAX_CHARS` | 4096 (**1024** under `configs/eval.yaml`, §8.2) | `rerank/cross_encoder.py` |
+| Max sub-queries per plan | — (`MAX_SUB_QUERIES`, module constant) | 3 (§5.1.4, `FR-03`) | `agent/planner.py` |
+| Max query characters | — (`MAX_QUERY_CHARS`, module constant) | 2048 — a safety bound, not a tunable | `agent/planner.py` |
 | Default result count | `AXIOM_TOP_K_DEFAULT` | 10 | `rerank/cross_encoder.py`, `api/routes.py` |
 | FAISS index-kind threshold | `AXIOM_FAISS_IVF_THRESHOLD` | 50000 | `indexing/dense.py` |
 | Chunk merge floor | `AXIOM_CHUNK_MIN_TOKENS` | 16 (`PLACEHOLDER`) | `chunking/ast_chunker.py` |
@@ -779,6 +899,8 @@ it at runtime (as opposed to the doc section that documents it):
 | Evolutionary dedupe cosine | `AXIOM_DEDUPE_COSINE` | 0.95 (`PLACEHOLDER`) | `versioning/evolutionary.py` |
 | Stability bonus multiplier | `AXIOM_STABILITY_BONUS` | 0.10 (`PLACEHOLDER`) | `versioning/evolutionary.py` |
 | Reranker enabled | `AXIOM_RERANKER_ENABLED` | true | `rerank/cross_encoder.py` |
+| Reranker model | `AXIOM_RERANKER_MODEL` | profile-split: `ms-marco-MiniLM-L-6-v2` (`demo`/`default`), `bge-reranker-v2-m3` (`eval`) — §3.2, §8.2 | `rerank/cross_encoder.py` |
+| Agent loop enabled | `AXIOM_AGENT_ENABLED` | true (**false** under `configs/eval.yaml`: one pass, §5.3) | `agent/loop.py` |
 | Reranker timeout | `AXIOM_RERANKER_TIMEOUT_MS` | 2500 | `rerank/cross_encoder.py` |
 | LLM enabled | `AXIOM_LLM_ENABLED` | true | `agent/llm.py`, gates §3.3's fallback |
 | Evolutionary retrieval enabled | `AXIOM_EVOLUTIONARY_ENABLED` | false | `versioning/evolutionary.py`, `retrieval/*` |
@@ -833,36 +955,186 @@ format detail (byte layout, JSON shape, invariants) lives in
 
 ---
 
-## 8. Latency budget
+## 8. Latency and memory budget (PLACEHOLDER, unmeasured)
 
-The `NFR-03` p50 budget is ≤ 900 ms with the agent loop's extra passes excluded (that is `NFR-04`'s
-job, ≤ 5 s p95). The canonical stage-by-stage accounting, first stated in
-[NonGoals.md NG-10](NonGoals.md#ng-10--no-production-sla-uptime-or-ha-guarantee) and owned
-mechanically here:
+> **Every number in this section is a projection, not a measurement.** No figure here has been
+> produced by `scripts/bench_latency.py` on the reference box. Per
+> [Rules.md §8](Rules.md#8-the-placeholder-convention) each is marked `# PLACEHOLDER` with an owning
+> `OQ-##`, and per the same rule **none of them may appear in a reported score, a slide, or a
+> README until its measurement closes.** The word "measured" has been removed from this section, and
+> from [Appflow.md](Appflow.md) and [NonGoals.md](NonGoals.md), everywhere it was attached to a
+> figure no run had produced.
+>
+> The previous revision of this table stated a **768 ms measured p50** with a **620 ms** rerank line
+> and **132 ms of headroom**. §8.1 shows that the 620 ms was the *fallback* reranker's figure written
+> against the *primary* reranker's row, off by roughly 25x. It is retracted, along with the
+> `132 ms headroom` argument that [NonGoals.md NG-19](NonGoals.md#ng-19--no-hyde-in-the-default-path)
+> used to reject HyDE.
 
-| Stage | ms | Notes |
+`NFR-03` remains ≤ 900 ms p50 with the agent loop disabled, and `NFR-04` ≤ 5 s p95 with up to 2
+total passes (§5.3). Those are *requirements*. What follows is the arithmetic that says which model
+stack can possibly satisfy them — which is a different and weaker claim than a measurement, and is
+presented as such.
+
+### 8.1 Why the reranker line was wrong: the arithmetic
+
+The retracted 620 ms was attributed to `BAAI/bge-reranker-v2-m3` over 25 pairs of 512 tokens.
+`bge-reranker-v2-m3` is **XLM-RoBERTa-large**: 24 layers, hidden 1024, FFN 4096. A transformer
+forward pass costs, per token per layer:
+
+```
+QKVO projections   2 x 4h^2                 = 8h^2   = 8.39  MFLOP   (h = 1024)
+FFN (two matmuls)  2 x 2 x h x 4h           = 16h^2  = 16.78 MFLOP
+attention scores   2 x 2 x seq x h          (seq = 512) = 2.10 MFLOP
+                                            per layer ~= 27.3 MFLOP/token
+x 24 layers                                           ~= 654  MFLOP/token
+x 512 tokens                                          ~= 335  GFLOP per (query, doc) pair
+x 25 pairs                                            ~= 8,375 GFLOP per query
+```
+
+To land 8,375 GFLOP (8,375 GOP in INT8) inside 620 ms demands **13.5 TOPS sustained**. The reference
+box is an 8-core AVX-512-VNNI CPU. Its *theoretical* INT8 peak is:
+
+```
+VPDPBUSD: 512-bit register = 64 int8 MACs = 128 ops per instruction
+2 FMA ports x 128 ops                     = 256 ops/cycle/core
+x ~2.5 GHz x 8 cores                      ~= 5.1 TOPS   (theoretical, never achieved)
+```
+
+13.5 TOPS is **~2.6x the theoretical peak**, so 620 ms is not merely optimistic, it is impossible.
+Even at 100% of theoretical peak the stage floors at ~1.6 s; ONNX Runtime dynamic INT8 typically
+realises 20–40% of peak on this shape, which puts the honest projection at **4–8 s**.
+
+The same arithmetic on `cross-encoder/ms-marco-MiniLM-L-6-v2` (6 layers, hidden 384):
+
+```
+per token per layer  24h^2 + 2 x 2 x 512 x 384  ~= 3.54 + 0.79  = 4.33 MFLOP
+x 6 layers                                      ~= 26   MFLOP/token
+x 512 tokens x 25 pairs                         ~= 333  GFLOP per query      (~25x cheaper)
+```
+
+333 GOP in 620 ms needs **0.54 TOPS** — ~11% of theoretical peak, which is comfortably inside what
+ORT INT8 delivers. **The 620 ms was MiniLM's number, recorded against bge's row.** That single
+transcription is the origin of the whole §8 table and of NG-19's headroom argument.
+
+### 8.2 The resolution: profile-split reranking (binding)
+
+`bge-reranker-v2-m3` is not dropped — it is *scoped to the run where latency is not observed*, and
+its cost is bought back by narrowing the candidate chain rather than by weakening the model.
+
+| | `eval` profile | `demo` / `default` profile |
 |---|---|---|
-| Classify | 60 | heuristic path; LLM path is slower and is why `AXIOM_LLM_ENABLED=false` is the faster of the two valid modes |
-| Query embed | 35 | one short sequence, ONNX INT8 |
-| Three signals (dense + sparse + structural), concurrent | 28 | not summed — the three retrievers run concurrently; this is the wall-clock cost of the slowest of the three |
-| RRF fusion | 3 | pure arithmetic over ≤ 250 candidates, no normalisation pass |
-| Hydrate (chunk_id → full `Chunk`) | 12 | `chunks.jsonl` lookup for the 25 fused candidates |
-| Rerank, 25 pairs | 620 | the dominant cost; cross-encoder inference dominates the budget by more than 10x over every other stage combined |
-| Format (`RetrievalResult` assembly) | 10 | template-based `match_reason`, no generation |
-| **Total (measured p50)** | **768** | **132 ms headroom under the 900 ms `NFR-03` ceiling** |
+| Reranker | `BAAI/bge-reranker-v2-m3` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| `fusion_top_n` (pairs scored) | **5** | 25 |
+| `rerank_max_chars` | **1024** (≈ 256 tokens at ~4 chars/token) | 4096 |
+| Work per query | 5 x 256 x 654 MFLOP ≈ **840 GFLOP** | 25 x 512 x 26 MFLOP ≈ **333 GFLOP** |
+| vs. the retracted 8,375 GFLOP | **~10x cheaper** | ~25x cheaper |
+| Latency claim | **none — this profile is offline and untimed** | the `NFR-03` p50 path |
 
-The reranker is unambiguously the latency-critical stage — `AXIOM_RERANKER_ENABLED=false` is the
-single largest lever for isolating whether a latency regression originates in fusion/retrieval or in
-reranking ([Setup.md §7.2](Setup.md#72-models)). `NFR-10` requires every stage above to emit a
-structured timing record via `core.stage_timer`, so this table is auditable from any single
-`--json` response, not just asserted here.
+> Correction to `configs/eval.yaml`'s own header comment: it states the narrowing cuts the rerank
+> stage "roughly 30x (~8,375 GFLOP -> ~250 GFLOP)". Recomputed above, the reduction is **~10x, to
+> ~840 GFLOP** — 5/25 pairs x 256/512 tokens is a 10x cut in the linear term. The config comment
+> understates the residual by about 3x. Flagged for the config owner; the doc states the recomputed
+> figure.
 
-An agent refinement pass repeats classify → plan → retrieve → fuse → hydrate → rerank in full
-(§5.3), so a two-pass query's worst case is bounded by the 5000 ms wall clock, not by a simple
-multiple of the 768 ms single-pass figure — the deadline check happens *before* starting a new pass,
-so a pass already in flight when the deadline is crossed is allowed to finish rather than being cut
-off mid-rerank batch, per the reference loop in
-[Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5).
+**No latency number produced under `configs/eval.yaml` may be quoted against `NFR-03` or `NFR-04`,
+or put on a slide.** The eval profile exists to produce one accuracy number.
+
+### 8.3 Projected p50 on the demo profile, LLM off (PLACEHOLDER, OQ-13)
+
+Stage names below are the actual `TimingLedger` tags emitted by the code (`core/timing.py`), not
+prose labels: `plan`, `agent.fan_out`, `fuse`, `hydrate`, `rerank`. There is no `classify` tag —
+classification happens inside `plan` — and no `format` tag.
+
+| Ledger stage | ms (projected) | Basis |
+|---|---|---|
+| `plan` (classify + identifier extraction + query embed) | 95 | `# PLACEHOLDER`, `OQ-14`. Heuristic classifier + one short ONNX INT8 sequence. |
+| `agent.fan_out` (dense + sparse + structural, concurrent) | 28 | `# PLACEHOLDER`. Wall clock of the slowest of three, not their sum. |
+| `fuse` | 3 | Pure integer arithmetic over ≤ 250 candidates; the one line here not model-bound. |
+| `hydrate` | 12 | `# PLACEHOLDER`. `chunks.jsonl` lookup for 25 ids. |
+| `rerank` (25 pairs, MiniLM) | 160–620 | `# PLACEHOLDER`, `OQ-13`. §8.1 puts the floor at 65 ms (theoretical peak) and the realistic band at 160–330 ms; 620 ms is carried as the conservative end. |
+| result assembly (untagged) | 10 | `# PLACEHOLDER`. |
+| **Projected total** | **~310–770** | **Projection only. Not a p50. Not measured.** |
+
+The reranker is the latency-critical stage under every assumption, which is why
+`AXIOM_RERANKER_ENABLED=false` is the single largest lever for isolating whether a regression
+originates in retrieval/fusion or in reranking. `NFR-10` requires each ledger stage above to appear
+in the `--json` `timings` block, so once `bench_latency.py` runs, this table is replaceable from a
+single response rather than re-derived by hand.
+
+**The LLM-on path has no budget and is not claimed to fit one.** With `AXIOM_LLM_ENABLED=true`, two
+`llama.cpp` calls per pass against a ~1.1 GB Q4_K_M model on CPU is seconds, not milliseconds,
+before retrieval starts. Every figure above is the `AXIOM_LLM_ENABLED=false` path, which
+§3.3 already treats as first-class. An LLM-on row is owed once measured; until then no p50 is
+claimed for the default-on configuration.
+
+### 8.4 Two-pass worst case
+
+A refinement pass repeats fan-out → fuse → hydrate → rerank in full (§5.3) — classification and
+planning are *not* re-run. A two-pass query is therefore bounded by the 5,000 ms monotonic deadline,
+not by 2x the single-pass projection. The deadline is checked before starting pass 2 and again
+before pass 2's rerank; a pass already past that second check is allowed to finish rather than being
+cut off mid-batch (`TC-088`).
+
+### 8.5 Cold index (PLACEHOLDER, OQ-14)
+
+`NFR-01` requires 10,000 chunks indexed in ≤ 12 min (720 s). The arithmetic against the locked
+embedder:
+
+```
+Qwen3-Embedding-0.6B, non-embedding params        ~455M
+forward cost                    2 x 455M           ~= 910 MFLOP/token
+10,000 chunks x ~256 tokens                         = 2.56M tokens
+total                                              ~= 2,330 TOP
+2,330 TOP / 720 s                                   = 3.24 TOPS sustained required
+```
+
+3.24 TOPS is **~63% of the 5.1 TOPS theoretical peak**, sustained, for twelve minutes. ORT dynamic
+INT8 realising 20–40% of peak puts the honest projection at **20–40 min**, i.e. 1.7–3.3x over budget.
+
+NonGoals.md NG-07's "cold index is measured at 636 s" has been retracted: no such run exists.
+Levers, in the order they should be tried, all owned by `OQ-14`:
+
+1. Measure first — export one INT8 artifact and time 500 real chunks. Everything above is arithmetic.
+2. Drop `AXIOM_EMBEDDING_MAX_TOKENS` from 512 toward 192–256 and re-centre the chunk band (§5.4).
+3. Use `all-MiniLM-L6-v2` (22M params, ~40x cheaper per token) as the embedder for the **demo**
+   index and keep Qwen3 only for the one-off 8,765-document APPS encode, where the cost is paid once.
+
+The 8,765-document APPS corpus is a *smaller* job than the 10k-chunk demo index, so `NFR-01` is not
+on the critical path to the reportable number. It is on the critical path to the live demo.
+
+### 8.6 Peak RSS (PLACEHOLDER, OQ-15)
+
+`NFR-05` requires ≤ 4 GB peak RSS during query serving. No memory accounting existed anywhere in the
+suite; this is the first. Component tally, all three models resident simultaneously:
+
+| Component | Est. RSS | Basis |
+|---|---|---|
+| Qwen3-Embedding-0.6B, INT8 ONNX weights | ~0.6 GB | ~596M params x 1 byte |
+| `bge-reranker-v2-m3`, INT8 weights (`eval` profile) | ~0.57 GB | XLM-R-large, ~568M params x 1 byte |
+| — or `ms-marco-MiniLM-L-6-v2`, INT8 (`demo` profile) | ~0.02 GB | ~22.7M params |
+| Query LLM, Q4_K_M GGUF, mmapped | ~1.1 GB | Setup.md's own model table |
+| FAISS `IndexFlatIP`, 10k x 1024 x fp32 | ~0.04 GB | exact |
+| bm25s postings, 10k chunks | ~0.05–0.15 GB | `# PLACEHOLDER` |
+| ORT arena allocators, 2–3 sessions | ~0.5–1.0 GB | `# PLACEHOLDER` — the least certain row |
+| Python + numpy + onnxruntime + pydantic + FastAPI | ~0.4–0.6 GB | `# PLACEHOLDER` |
+| **Projected peak, `eval` profile** | **~3.3–4.1 GB** | at or over the 4 GB ceiling |
+| **Projected peak, `demo` profile** | **~2.7–3.5 GB** | MiniLM reranker saves ~0.55 GB |
+
+The obvious lever is **not holding all three models resident**: the LLM is needed only for
+classify/plan (before retrieval) and the reranker only after fusion, so a bounded
+lazy-load-and-release policy keeps peak near 2.5 GB. If they must stay resident for latency, raise
+`NFR-05` to 6 GB and say why — *a stated 6 GB is defensible to a jury; a 4 GB claim that OOMs mid-demo
+is not.* Either way the number is decided by a `psutil` sample, not by this table.
+
+### 8.7 What must happen before any number in §8 is quoted
+
+1. Export one INT8 embedder artifact and time 500 real chunks → closes `OQ-14`, fixes §8.5.
+2. Time one 25-pair MiniLM rerank batch and one 5-pair bge batch → closes `OQ-13`, fixes §8.1/§8.3.
+3. Sample RSS at 100 ms through one query under both profiles → closes `OQ-15`, fixes §8.6.
+
+Until all three land, every figure in this section carries its `# PLACEHOLDER` marker into any
+document that cites it, per [Rules.md AP-14](Rules.md#ap-14--reporting-a-number-built-on-a-placeholder-8).
 
 ---
 

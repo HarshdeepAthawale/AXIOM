@@ -12,3 +12,4 @@ models/
 *.onnx
 *.gguf
 appsretrieval_results.json
+.axiom*/

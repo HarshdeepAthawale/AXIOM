@@ -66,13 +66,32 @@ def assert_byte_equivalent(source: str, chunks) -> None:
 
 
 def assert_line_equivalent(source: str, chunks) -> None:
-    """Lines are 1-indexed and inclusive on both ends (Schema.md section 4)."""
+    """Lines are 1-indexed and inclusive on both ends (Schema.md section 4).
+
+    The line span *contains* the chunk; it does not always equal it. An AST node
+    that begins mid-line -- a nested function expression, an arrow function, an
+    object-literal method -- starts after an indent and a ``return ``/``= ``, so
+    slicing whole lines yields that prefix too. Byte equivalence is the exact
+    contract (Schema.md section 6); the line range is the human-facing locator
+    printed as ``file.js:42-67``.
+
+    PRD US-6 currently claims whole-line slicing reproduces the chunk
+    byte-for-byte. That is true only for chunks starting at column 0, which
+    excludes most real JavaScript, and the claim needs weakening rather than
+    the chunker changing.
+    """
     lines = source.split("\n")
     for chunk in chunks:
         loc = chunk.location
         assert loc.start_line >= 1
         assert loc.end_line >= loc.start_line
-        assert "\n".join(lines[loc.start_line - 1 : loc.end_line]) == chunk.text
+        assert loc.end_line <= len(lines)
+        window = "\n".join(lines[loc.start_line - 1 : loc.end_line])
+        assert chunk.text.strip() in window, (
+            f"line span {loc.as_ref()} does not contain its own chunk text"
+        )
+        # The first line of the chunk must genuinely live on start_line.
+        assert chunk.text.splitlines()[0].strip() in lines[loc.start_line - 1]
 
 
 # ---------------------------------------------------------------------------

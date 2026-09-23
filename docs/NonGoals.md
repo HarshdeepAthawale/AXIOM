@@ -1,9 +1,9 @@
 # Non-Goals
 
-The explicit scope fence for Axiom: what we are deliberately not building in the 2026-09-15 to 2026-09-27 window, why each exclusion is a decision rather than an oversight, and what we ship instead.
+The explicit scope fence for Axiom: what we are deliberately not building in the re-baselined 2026-09-23 to 2026-09-27 window, why each exclusion is a decision rather than an oversight, and what we ship instead.
 
 **Owner:** Parth Deshmukh
-**Last updated:** 2026-09-15
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [PRD.md](PRD.md) · [OpenQuestions.md](OpenQuestions.md) · [TechSpecifications.md](TechSpecifications.md) · [Design.md](Design.md) · [Decisions.md](Decisions.md) · [ImplementationPlan.md](ImplementationPlan.md) · [TestPlan.md](TestPlan.md) · [Security.md](Security.md) · [Deployment.md](Deployment.md) · [API.md](API.md) · [Glossary.md](Glossary.md)
@@ -164,20 +164,39 @@ worse than the released one.
 **Instead we do:** `FR-26` — supervised *configuration* tuning, not weight tuning. The 5,000
 `AppsRetrieval` train pairs are split 4,000 tune / 1,000 dev (seeded, id lists committed under
 `data/splits/`) and used to fit RRF signal weights per profile, the sufficiency thresholds
-(0.35 / 0.20), and query-preprocessing variants. The one accepted accuracy intervention that
-touches the corpus is reverse doc2query document expansion in `axiom.indexing.expansion`
-(estimated +4 to +8 NDCG@10), which generates *index-time text* and still trains nothing.
+(0.35 / 0.20), and query-preprocessing variants.
+
+**Retracted 2026-09-23: there is no accepted corpus-touching intervention.** The previous revision
+named reverse doc2query document expansion in `axiom.indexing.expansion` as "the one accepted
+accuracy intervention," banking an **estimated +4 to +8 NDCG@10**. That estimate was unsourced — it
+appears in no paper cited anywhere in this suite and in no run of ours — and it was a quarter of the
+stated path to the accuracy target. The module does not exist in `src/`, and the ADR that proposed
+it is **withdrawn**: it required feeding chunk text to the query LLM, which
+[ADR-008](Decisions.md#adr-008--the-query-llm-never-reads-code) and `_CONTRACT.md §2` forbid. See
+[ADR-013](Decisions.md#adr-013--reverse-doc2query-expansion-as-the-one-corpus-touching-intervention)
+for the full resolution. `NG-06` is therefore absolute for this cycle: **nothing writes to the
+corpus.**
 
 ### NG-07 — No distributed or multi-node indexing
 
 **Category:** out of problem scope
 **Boundary:** No Ray, no Dask, no Celery, no shard-and-merge across machines, no work queue. One
 process, one machine, one index root.
-**Instead we do:** a bounded in-process worker pool for chunking and embedding on a single box. The
-budget makes distribution unnecessary: cold index is measured at **636 s** against the **720 s**
-ceiling (`NFR-01`), and incremental reindex of a 50-file diff lands inside 45 s (`NFR-02`). Adding a
-cluster would buy time we already have and cost a failure mode the jury's laptop cannot even
-reproduce.
+**Instead we do:** a bounded in-process worker pool for chunking and embedding on a single box.
+
+**Correction, 2026-09-23.** The previous revision justified this with "cold index is **measured** at
+636 s against the 720 s ceiling (`NFR-01`)." **No such measurement exists**, and the arithmetic in
+[TechSpecifications.md §8.5](TechSpecifications.md#85-cold-index-placeholder-oq-14) projects
+20–40 min, not 636 s: 10k chunks x ~256 tokens through Qwen3-Embedding-0.6B needs ~3.24 TOPS
+sustained against a ~5.1 TOPS *theoretical* CPU peak. The 636 s figure is withdrawn; `NFR-01` is
+`# PLACEHOLDER`, tracked as `OQ-14`.
+
+The non-goal survives the correction, and it is worth saying why rather than quietly keeping it.
+Distribution is excluded on **scope and time**, not on headroom: Ray/Dask/Celery is a day of work
+plus a failure mode the jury's laptop cannot reproduce, and it would not be reached for even if the
+index took an hour. The honest levers if `OQ-14` confirms the projection are in §8.5 of
+TechSpecifications — a shorter max-token bound, or `all-MiniLM-L6-v2` for the demo index — none of
+which is a cluster.
 
 ### NG-08 — No authentication, authorisation, or multi-tenancy
 
@@ -206,11 +225,24 @@ in memory and nothing else.
 **Boundary:** We publish no availability target, no error-rate budget, no graceful-restart story, no
 health-check-driven orchestration beyond a `GET` health endpoint. Axiom is a hackathon prototype
 that must survive a 10-minute jury session, not a service with an on-call rotation.
-**Instead we do:** state latency as a *measured engineering budget*, not a promise. The canonical
-query p50 is **768 ms** — classify 60 + query-embed 35 + three signals concurrent 28 + RRF 3 +
-hydrate 12 + rerank 25 pairs 620 + format 10 — leaving **132 ms of headroom** under the 900 ms
-ceiling (`NFR-03`). `NFR-10` requires every stage to emit a timing record and every `--json`
-response to carry a `timings` block, so every number we claim is auditable from a single run.
+**Instead we do:** state latency as an *engineering budget*, not a promise — and state whether the
+budget has been measured.
+
+**Correction, 2026-09-23.** The previous revision called 768 ms "the canonical query p50," broken
+down as classify 60 + query-embed 35 + three signals concurrent 28 + RRF 3 + hydrate 12 + rerank
+25 pairs 620 + format 10, "leaving 132 ms of headroom." **No run produced any of those numbers**,
+and the 620 ms rerank line was `ms-marco-MiniLM-L-6-v2`'s figure written against
+`bge-reranker-v2-m3`'s row — off by roughly 25x, with the arithmetic shown in
+[TechSpecifications.md §8.1](TechSpecifications.md#81-why-the-reranker-line-was-wrong-the-arithmetic).
+The 768 ms p50 and the 132 ms headroom are **retracted**. This document no longer restates a latency
+breakdown at all: [TechSpecifications.md §8](TechSpecifications.md#8-latency-and-memory-budget-placeholder-unmeasured)
+is the single home for it, every row is `# PLACEHOLDER` with an owning `OQ-##`, and per
+[Rules.md §8](Rules.md#8-the-placeholder-convention) none may be quoted until its measurement lands.
+
+What survives unchanged is the *discipline*: `NFR-10` requires every stage to emit a timing record
+and every `--json` response to carry a `timings` block, so the moment a number exists it is auditable
+from a single run rather than asserted in prose. That was always the load-bearing claim; the 768 ms
+was not.
 
 ### NG-11 — No IDE plugin
 
@@ -311,21 +343,33 @@ not need, and `IndexIVFPQ` training below its recommended cluster population is 
 leak that would be indistinguishable from a retrieval bug.
 **Instead we do:** keep the locked switch — `IndexFlatIP` below 50k vectors, `IndexIVFPQ` at or
 above 50k (`FR-05`). The benchmark sits firmly on the flat side; the 10k-chunk demo index also sits
-on the flat side; `IndexIVFPQ` exists for scale headroom and is seeded when it is used (`NFR-08`).
+on the flat side — and so, by a wide margin, does the demo index, now that the demo corpus is a
+small tagged repo (≈10–50 source files, `OQ-07`) rather than the 10k-file repo an earlier revision
+of `PRD.md §8` promised. `IndexIVFPQ` exists for scale headroom and is seeded when it is used
+(`NFR-08`).
 `VersionManifest.index_kind` records which was built so a result can never be misattributed.
 
 ### NG-19 — No HyDE in the default path
 
 **Category:** CPU budget
 **Boundary:** Hypothetical Document Embeddings stays behind `AXIOM_ENABLE_HYDE`, default **false**.
-HyDE requires a generation pass before retrieval; on CPU with a Q4_K_M 1.5B model that is hundreds
-of milliseconds per query against 132 ms of headroom in the 768 ms p50 budget, and it contradicts
-`NG-23` in spirit by putting generated text at the head of the pipeline.
-**Instead we do:** treat HyDE as a measured ablation row, not a default. It is evaluated on the
-carved dev slice; if it earns its latency it is promoted by an `ADR-###` in
-[Decisions.md](Decisions.md) and only in a profile that can afford it. The accuracy work that *is*
-accepted on the default path is index-time reverse doc2query expansion (`NG-06`), which costs
-nothing at query time.
+HyDE requires a generation pass before retrieval; on CPU with a Q4_K_M model that is hundreds of
+milliseconds to seconds per query, and it contradicts `NG-23` in spirit by putting generated text at
+the head of the pipeline.
+
+**Correction, 2026-09-23.** The previous revision rejected HyDE by arithmetic — "hundreds of
+milliseconds against 132 ms of headroom in the 768 ms p50 budget." That headroom figure was
+fabricated (see `NG-10`), so a false number was driving a real scope decision. **The exclusion
+stands on its own merits and is now stated without it:** HyDE adds a generation pass to the head of
+the query path in a project whose entire thesis is that the LLM never generates on the retrieval
+path, it is untested, it is unimplemented, and there are four calendar days. `AXIOM_ENABLE_HYDE` is
+**closed for this cycle**, not deferred to a measurement that will not happen —
+[`OQ-08`](OpenQuestions.md#oq-08--is-hyde-worth-its-latency-on-any-profile) is closed accordingly.
+
+**Instead we do:** nothing at query time. The previous revision pointed at index-time reverse
+doc2query expansion as the accepted alternative; that is also withdrawn (`NG-06`, ADR-013). The
+accuracy work that remains is tuning the constants we already have, on the train split only
+(`FR-26`), which is the honest and the affordable option.
 
 ### NG-20 — No custom React or SPA front-end
 
@@ -421,8 +465,9 @@ byte count while carrying near-zero retrieval value, and a single minified bundl
 thousands of junk chunks that poison both BM25 term statistics and the dense neighbourhood.
 **Instead we do:** an explicit ignore list in the profile configs, applied before chunking, plus the
 64-512 token chunk target with sub-16-token merging (`FR-04`) so pathological inputs cannot inflate
-chunk counts. This is a direct dependency of the 636 s cold-index measurement in `NG-07`: that
-number assumes a source-only corpus and is meaningless without this fence.
+chunk counts. This fence is a direct dependency of *any* cold-index figure `NG-07`/`NFR-01` ever
+carries: a chunk count is only meaningful over a source-only corpus. (The 636 s figure this
+paragraph previously cited is retracted — see `NG-07`.)
 
 ### NG-27 — No graph database for the structural index
 
@@ -463,6 +508,18 @@ MRR — is logged in [Tracker.md](Tracker.md). The protocol itself is [TestPlan.
 subject. This is the one non-goal whose violation is invisible in the artefact and fatal to the
 claim, which is why it is written down rather than assumed.
 
+**Absolute, confirmed 2026-09-23 — including under time pressure.** The fence has no fallback door,
+and it previously had one. `PRD.md` Assumption A-6's fallback read: "if the train split is
+unavailable or mis-shaped, fall back to a 500-query holdout **carved from the dev portion of
+test**." That is precisely this non-goal's violation, written into a requirements document as the
+contingency plan. A-6 has been rewritten
+([PRD.md §10](PRD.md#10-assumptions)) so that **no fallback path can reach the test split**: if the
+train split fails, we tune on the demo corpus with a hand-written query set, or we ship the locked
+default constants untuned and say so. A lower reported number that is honestly obtained is
+recoverable; a number obtained this way is not, and it cannot be detected from the artefact by
+anyone but us. `PROJECT_OVERVIEW.md`'s Day-7 "MTEB eval on test split" entry, if it is retained at
+all, means the single permitted reportable run, never a tuning activity.
+
 ### NG-30 — No cross-query result cache
 
 **Category:** risk
@@ -472,7 +529,8 @@ regressions behind a hit rate, and let a demo look fast for reasons unrelated to
 **Instead we do:** cache exactly one thing, at exactly one layer — content-addressed **embeddings**
 at `.axiom/blobs/<content_hash>.npy`, shared across versions (`FR-19`). That is an indexing-time
 artefact with a content-derived key, so it cannot go stale. Query-time cost is paid every time and
-reported every time: the 768 ms p50 in `NG-10` is a cold-cache-by-construction number. Model load
+reported every time: whatever p50 `NFR-03` eventually measures is a cold-cache-by-construction
+number. Model load
 (ONNX session construction, GGUF mmap) is lazy and therefore warm after the first query; the demo
 runbook in [Deployment.md](Deployment.md) warms the process explicitly rather than pretending the
 first query was fast.
@@ -489,12 +547,12 @@ and nothing here may be started before the `Definition of Done` in
 | Idea | Why it is outside the 10-day window |
 |---|---|
 | TypeScript and JSX grammars for the structural signal | Each new grammar needs its own node-kind mapping, export-resolution rules, and chunker tests; that is a day per language and the demo repo is plain JavaScript. |
-| Learned sparse retrieval (SPLADE-style) as a fourth signal | Requires an expansion model pass over the whole corpus at index time, which breaks the 720 s cold-index ceiling before it is even tuned. |
+| Learned sparse retrieval (SPLADE-style) as a fourth signal | Requires an expansion model pass over the whole corpus at index time, on top of a cold index already projected to miss the 720 s ceiling unaided (`OQ-14`). |
 | Embedding fine-tune on APPS train pairs | Explicitly rejected for this cycle by `NG-06`; revisiting it needs GPU hours and a held-out protocol that does not exist yet. |
 | VS Code extension over the existing `--json` API | Extension packaging and an editor debug loop are a day-plus for zero rubric points; `NG-11` already froze the contract it would consume. |
 | File-watching daemon wrapping `axiom reindex` | Pure convenience over a capability `FR-18` already proves; debounce and partial-write handling are where the real time goes. |
 | Call-graph reachability beyond depth 1 (transitive callers) | Needs a recursive CTE plus cycle handling and a new relevance story for indirect hits; the three query archetypes are all depth-1. |
-| Multi-hop agent planning beyond 2 passes | The 5 s wall clock in `FR-13` cannot fund a third pass on CPU; raising the cap needs a faster reranker first. |
+| Multi-hop agent planning beyond 2 **total** passes (§5.3 of TechSpecifications: the cap counts the initial retrieval) | The 5 s wall clock in `FR-13` cannot fund a third cycle on CPU; raising the cap needs a faster reranker first. |
 | Cross-encoder distillation into a smaller student | Would buy latency headroom for HyDE (`NG-19`), but it is training, which `NG-06` excludes this cycle. |
 | Hosted read-only demo instance | Useful for sharing after judging; a live URL on judging day is a `NG-13` single point of failure. |
 | Prometheus/OpenTelemetry export of the `timings` block | `NFR-10` already emits the data structurally; wiring an exporter and a dashboard serves an operations story `NG-10` says we do not have. |

@@ -72,27 +72,38 @@ class TestIndexBuild:
     def test_the_degraded_rungs_are_visible_in_the_report(self, indexed_v1) -> None:
         """Rule 3: a degrade that nobody notices is a silently wrong answer.
 
-        On a bare install every ladder falls to its bottom rung, and the report
-        names the rung that ran: ``numpy`` rather than faiss, ``pure_python``
-        rather than bm25s.
-
         ``IndexReport.degradations`` used to stay empty here -- it collected only
         whole-step *failures*, so a build that fell all the way down four ladders
         reported nothing while a dozen WARNINGs scrolled past, and ``axiom index
         --json`` could not tell an operator which rung had run (NFR-07). The
         build now listens on the ``axiom`` logger, so the list carries the rungs
-        themselves. The three that must be present on any bare install are the
-        embedder's bottom rung, dense's faiss rung, and sparse's bm25s rung.
+        themselves.
+
+        What this asserts is the *reporting mechanism*, not which rung happened
+        to win. An earlier version hardcoded ``dense_backend == "numpy"`` with
+        the note "faiss cannot have loaded on a bare install" -- which made the
+        test fail the moment someone installed the extras, i.e. exactly when the
+        system got better. Optional dependencies are optional in both
+        directions, so the invariant is: whichever rung ran is *named*, and any
+        rung below the top is *reported*.
         """
         _, report = indexed_v1
-        assert report.dense_backend == "numpy", "faiss cannot have loaded on a bare install"
-        assert report.sparse_backend == "pure_python"
+        assert report.dense_backend in {"faiss", "numpy"}, report.dense_backend
+        assert report.sparse_backend in {"bm25s", "pure_python"}, report.sparse_backend
 
         joined = " | ".join(report.degradations)
-        assert "hash-embedder" in joined, joined
-        assert "faiss" in joined, joined
-        assert "bm25s" in joined, joined
         assert len(report.degradations) == len(set(report.degradations)), "rungs must dedupe"
+
+        # Each ladder that did not run at its top rung must say so.
+        if report.dense_backend == "numpy":
+            assert "faiss" in joined, joined
+        if report.sparse_backend == "pure_python":
+            assert "bm25s" in joined, joined
+        if "hash-embedder" in report.manifest.embedding_model:
+            assert "hash-embedder" in joined, joined
+        # The primary embedder needs an ONNX export that no test fixture ships,
+        # so the embedder ladder always degrades at least one rung here.
+        assert any("embedder" in entry for entry in report.degradations), joined
 
     def test_chunks_jsonl_round_trips_through_the_schema(self, indexed_v1) -> None:
         """Every line must validate, including the ``chunk_id`` integrity check."""
@@ -173,8 +184,25 @@ class TestQuery:
             assert location.start_line >= 1 and location.end_line >= location.start_line
             lines = source.split("\n")
             assert location.end_line <= len(lines), "line range runs past the end of the file"
+
+            # The BYTE range is the exact contract (Schema.md section 6):
+            # text == source_bytes[start_byte:end_byte].decode("utf-8").
+            source_bytes = (repo_v1 / location.file_path).read_bytes()
             assert (
-                "\n".join(lines[location.start_line - 1 : location.end_line]) == result.chunk.text
+                source_bytes[location.start_byte : location.end_byte].decode("utf-8")
+                == result.chunk.text
+            ), f"byte range does not reproduce the chunk at {location.as_ref()}"
+
+            # The LINE range is a human-facing locator and is a *superset* of
+            # the text whenever the AST node begins mid-line -- a nested
+            # function expression, an arrow function, or an object-literal
+            # method all start after an indent and a `return `/`=`. PRD US-6
+            # claims whole-line slicing reproduces the chunk byte-for-byte;
+            # that holds only for chunks starting at column 0, so the honest
+            # invariant is containment, with the byte range as the exact one.
+            line_slice = "\n".join(lines[location.start_line - 1 : location.end_line])
+            assert result.chunk.text.strip() in line_slice, (
+                f"line range does not contain the chunk at {location.as_ref()}"
             )
 
     def test_every_result_explains_itself(self, indexed_v1) -> None:
@@ -304,8 +332,14 @@ class TestReindexProducesAQueryableVersion:
         assert report.chunk_count > 0
 
         version = mf.version_dir(settings, "v2")
-        for artefact in ("chunks.jsonl", "manifest.json", "dense.npy", "dense.idmap.json"):
+        for artefact in ("chunks.jsonl", "manifest.json", "dense.idmap.json"):
             assert (version / artefact).is_file(), f"{artefact} missing from {version}"
+        # The dense artefact is named by the rung that ran: faiss writes
+        # dense.faiss, the numpy fallback writes dense.npy. Asserting one or the
+        # other would make this test depend on whether the optional extras are
+        # installed -- what matters is that the version carries exactly one.
+        dense = [name for name in ("dense.faiss", "dense.npy") if (version / name).is_file()]
+        assert len(dense) == 1, f"expected one dense artefact in {version}, found {dense}"
         assert (version / "sparse.bm25s").is_dir()
         assert (version / "structural.sqlite").is_file()
 

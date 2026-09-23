@@ -1,3 +1,47 @@
+> # SUPERSEDED — DO NOT BUILD FROM THIS DOCUMENT
+>
+> **Status:** Superseded · **Superseded on:** 2026-09-23 · **Owner of this archival note:** Parth Deshmukh
+>
+> This file is **pre-contract brainstorming**, written before `docs/_CONTRACT.md`, the ADRs in
+> [`Decisions.md`](../Decisions.md) and the implementation existed. It was never revised afterwards,
+> and it contradicts the locked architecture in roughly ten places. It is retained under
+> `docs/archive/` for provenance — Appendix B's RRF derivation and Appendix C's note on the earlier,
+> unrelated Axiom project are cited elsewhere — and for **no other purpose**.
+>
+> **It is not a source. Nothing may be implemented, quoted, or presented from it.** The canonical
+> documents are, in order of authority: [`_CONTRACT.md`](../_CONTRACT.md) →
+> [`PRD.md`](../PRD.md) / [`Schema.md`](../Schema.md) / [`Decisions.md`](../Decisions.md) →
+> [`TechSpecifications.md`](../TechSpecifications.md) / [`Design.md`](../Design.md) →
+> [`ImplementationPlan.md`](../ImplementationPlan.md) / [`Tracker.md`](../Tracker.md).
+>
+> ## The specific contradictions, so nobody has to re-derive them
+>
+> | This file says | The locked truth | Where |
+> |---|---|---|
+> | §6 step 3: the agent **"Read — examine retrieved snippets"** | **The query LLM is NEVER used to read code.** It classifies and rewrites the *query* only. This is the project's central innovation claim, and §6 as written negates it. The implemented step is *assess* — judge sufficiency from scores, never from snippet text | `_CONTRACT.md §2`, `agent/evaluator.py` |
+> | §10: BM25 via `rank-bm25` | `bm25s`. `rank-bm25` is banned | `_CONTRACT.md §2` |
+> | §10: vector store "FAISS (IVF-PQ) or ChromaDB" | FAISS only, and **flat IP below the configured threshold**, IVF-PQ above it — not unconditional IVF-PQ. ChromaDB is not a dependency | `indexing/dense.py` |
+> | §10: "LangChain / LangGraph or custom" | Custom. No agent framework is a dependency | `ADR-007` |
+> | §10: LLM "or API" | Local GGUF only; no third-party model API, ever | `NG-17` |
+> | §10: `gitpython` or `dulwich` | Neither. `versioning/gitdiff.py` shells out to `git` | `versioning/gitdiff.py` |
+> | §10: "Reranker on top-20 only" | Top-`fusion_top_n`, which is 25 by default and 5 on the eval profile | `_CONTRACT.md §5`, `configs/eval.yaml` |
+> | §5.3 / Appendix B: **unweighted** RRF | Weighted RRF, per-`QueryType` weight vectors. Appendix B remains a correct *unweighted illustration* and is labelled as such where it is cited | `retrieval/fusion.py` |
+> | §8: dedupe at `cosine > 0.95` | `cosine >= 0.95`. The operator is asserted deliberately | `versioning/evolutionary.py`, TC-083 |
+> | §7 (Optimization): **"MTEB eval on test split"** as a *tuning* activity | The test split is never used for tuning. Tuning draws from the train split only | `NG-29` |
+> | §13: build window **"11 Sep – 27 Sep"**, a 10-day timeline, Day 10 = 24 Sep | Void. The window is **Day 1 = 2026-09-23, submission 2026-09-27** | `ImplementationPlan.md §0` |
+> | §14: a six-row risk table | The canonical register is `RISK-01`–`RISK-12` | `ImplementationPlan.md §5` |
+> | §12: team responsibilities, including the demo video | `PRD.md §5`'s `Owner` column is authoritative; the demo video is Harshdeep's (`T-211`) | `PRD.md §5`, `Tracker.md` |
+>
+> ## Why archived rather than rewritten
+>
+> Rewriting it would produce a fourth description of the same architecture, competing with
+> `README.md`, `PRD.md` and `Design.md` — which is exactly what the suite's "each fact has exactly
+> one home; link to it, never restate it" rule forbids. Archiving costs one move and removes a
+> jury-facing contradiction from the repository root. `_CONTRACT.md` deletes itself before
+> submission, so a stale overview at the root would have outlived the document that arbitrates it.
+
+---
+
 # Axiom — Agentic Code Intelligence
 
 **Samsung PRISM GenAI Hackathon 3rd Edition (2026-27) | Theme 01**
