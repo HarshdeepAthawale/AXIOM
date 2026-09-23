@@ -377,19 +377,24 @@ Performance on the **test split of CoIR** `AppsRetrieval` **dataset**:
 | **NDCG@10** | Are the most relevant results at the top?        | Normalized Discounted Cumulative Gain at cutoff 10 |
 | **MRR**     | How early does the first relevant result appear? | Mean Reciprocal Rank                               |
 
-**Reference baselines on CoIR Apps** (NDCG@10):
+**Reference baselines on CoIR Apps — quarantined, do not quote.**
 
-| Model         | Size | NDCG@10 |
-| ------------- | ---- | ------- |
-| BM25          | —    | 4.8     |
-| UniXcoder     | 0.1B | 1.4     |
-| E5-PT         | 0.3B | 10.6    |
-| BGE           | 0.6B | 14.7    |
-| E5-Mistral    | 7B   | 23.5    |
-| Voyage-Code-2 | —    | 26.5    |
-| Revela        | 3B   | 26.6    |
+This section previously carried a seven-row table of published NDCG@10 figures (BM25 4.8,
+UniXcoder 1.4, E5-PT 10.6, BGE 0.6B 14.7, E5-Mistral 23.5, Voyage-Code-2 26.5, Revela 26.6) and a
+target of "beat BGE (14.7)". **The table is withdrawn and the target with it.** An adversarial
+audit of this suite could not locate 14.7 in either paper the figure was attributed to, and no one
+on the team has since re-opened those papers to check. The rest of the rows inherited the same
+provenance and are no better attested.
 
-**Our target:** Beat BGE (14.7) significantly through hybrid retrieval + reranking. Competitive with the 20+ range through the agentic refinement loop.
+The rule, per [`docs/PRD.md` §2.0.3](docs/PRD.md#203-external-comparison-table--quarantined-pending-per-row-citation):
+**no row returns to this table without a specific paper, table and page read by a human.** A
+number that cannot be sourced is not a baseline, it is an anchor — and anchoring our own gates to
+it is how the 14.7 error nearly reached a slide.
+
+**Our target is expressed against our own measured baseline instead** — see *Measured Results*
+below and [`docs/PRD.md` §2](docs/PRD.md#2-goals-and-success-metrics), which states the milestone gates as
+multiples of `B`, the dense-only NDCG@10 we measured ourselves, rather than as absolute numbers
+borrowed from elsewhere.
 
 ### How to Generate the Evaluation JSON
 
@@ -420,11 +425,22 @@ projection, a citation, or a target. Where a run is not reportable, it says so a
 **Screening benchmark — CoIR `AppsRetrieval`, full `test` split.**
 3,765 judged queries over an 8,765-document corpus. No truncation. `degraded: False`.
 
-| Arm | NDCG@10 | MRR@10 | Recall@100 | Notes |
+| Arm | NDCG@10 | MRR@10 | Recall@100 | Wall clock |
 |---|---|---|---|---|
-| Dense only, `all-MiniLM-L6-v2` (22M params) | **7.59** | 6.39 | 27.22 | 39 min on 10-core CPU |
-| Dense + BM25, weighted RRF | *running* | | | populates the eval cache |
-| Target in `docs/PRD.md` | 20.0 | 22.0 | 65.0 | not reached |
+| Dense only, `all-MiniLM-L6-v2` (22M params) | 7.59 | 6.39 | 27.22 | 39 min |
+| Dense + BM25, weighted RRF (.85/.15) | **7.78** | **6.60** | 27.17 | 17 min (cached) |
+| Target in `docs/PRD.md` | 20.0 | 22.0 | 65.0 | — |
+
+**What the ablation shows, and it is not what we assumed.** Adding the sparse leg moves NDCG@10 by
+`+0.19` and MRR@10 by `+0.21` — a real but small gain — while Recall@100 moves by `-0.05`, which is
+to say not at all. BM25 is **reordering** the candidate pool, not enlarging it. Every relevant
+document it surfaces, the dense leg had already found.
+
+That localises the problem precisely. The 27.2 recall ceiling is a property of the dense embedder
+alone, and fusion cannot lift it; neither can the reranker or the agent loop, which act even later
+in the pipeline. The only lever that moves this number is a stronger first-stage embedder — the
+`Qwen3-Embedding-0.6B` primary, which is 27x larger and has not yet been exported to ONNX and run.
+The architecture is sound and measured; the model underneath it is the fallback.
 
 For scale, published CoIR figures put BM25 at 4.8 and BGE-M3 (568M params) at 7.37 on this task.
 A 22M-parameter model reaching 7.59 dense-only — no sparse leg, no reranker, no agent loop — is
@@ -580,21 +596,23 @@ All embedding, retrieval, and reranking must run efficiently on CPU:
 
 ## 13. Timeline (10 Days)
 
-We have **11 Sep – 27 Sep** (the build window). Registration closes **16 Sep**.
+**Re-baselined 2026-09-23.** The 15–25 Sep day plan this section used to carry **is void**, and
+so is every "Day 10 = 24 Sep" reference that went with it. The build window is now five days:
+**Day 1 = 2026-09-23, submission Day 5 = 2026-09-27 (23:59).** The authority for the plan is
+[`docs/ImplementationPlan.md` §0](docs/ImplementationPlan.md#0-re-baseline-notice--read-this-before-anything-else);
+this table is a summary of it and loses to it on any disagreement.
 
-| Day        | Date      | Milestone                                                                                                                                                      | Who                   |
-| ---------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| **1-2**    | 15-16 Sep | **Foundation:** Repo setup, dataset download (CoIR apps), tree-sitter parsing working, embedding model selected + tested on sample, BM25 index built on sample | All                   |
-| **3-4**    | 17-18 Sep | **Core Retrieval:** Dense index built on full corpus, BM25 index built, RRF fusion working end-to-end, first MTEB eval run                                     | Prabinder + Harshdeep |
-| **3-4**    | 17-18 Sep | **Structural:** AST parser + call graph builder working on sample JS codebase, structural query handler                                                        | Anish                 |
-| **3-4**    | 17-18 Sep | **Version:** Git-diff based indexing prototype, version tagging                                                                                                | Parth                 |
-| **5-6**    | 19-20 Sep | **Agentic Loop:** Query classifier, agent refinement loop, cross-encoder reranker integrated                                                                   | Harshdeep             |
-| **5-6**    | 19-20 Sep | **Integration:** All three signals (dense + BM25 + structural) fused, tested on real queries                                                                   | All                   |
-| **7**      | 21 Sep    | **Optimization:** Tune RRF weights, sufficiency thresholds and query preprocessing **on the train split only** — the test split is never used for tuning (`NG-29`)                                                    | Prabinder + Parth     |
-| **8**      | 22 Sep    | **P1 + Bonus:** Version-aware retrieval tested, evolutionary dedup working                                                                                     | Parth + Anish         |
-| **9**      | 23 Sep    | **Demo + PPT:** Record demo video (5 min), build PPT, write README with Docker/setup instructions                                                              | Harshdeep + Parth     |
-| **10**     | 24 Sep    | **Polish + Submit:** Final MTEB eval, generate `appsretrieval_results.json`, create GitHub release (`PRISM_GENAI_HACKATHON_Y2026`), submit Google Form         | All                   |
-| **Buffer** | 25-27 Sep | **Buffer + deadline (27 Sep).** Fix any last issues, re-submit if needed. Submission closes 27 Sep 11:59 PM.                                                                       | All                   |
+The re-baseline is a change of subject, not a slipped schedule. The system is built — 69 modules,
+611 tests passing. What remains is the part that is actually scored: measuring it, and producing a
+demo and a submission artifact from real numbers.
+
+| Day | Date | Milestone | Who |
+| --- | --- | --- | --- |
+| **1** | 23 Sep | Reproducible clone, green suite, real model stack installed and smoked | All |
+| **2** | 24 Sep | Full-split dense-only baseline `B` measured; ablation arms recorded in `artifacts/experiments.csv` | Prabinder + Parth |
+| **3** | 25 Sep | Tagged demo repo (10–50 files); reranker weights exported; rerank + agent deltas measured against `B` | Harshdeep + Anish |
+| **4** | 26 Sep | Demo video, deck and README built from measured numbers only; tuning frozen (train split only, `NG-29`) | Harshdeep + Parth |
+| **5** | 27 Sep | Final reportable eval run, `appsretrieval_results.json`, GitHub release `PRISM_GENAI_HACKATHON_Y2026`, Google Form | All |
 
 ---
 

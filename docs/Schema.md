@@ -1,6 +1,6 @@
 # Schema
 
-Canonical data-model reference for PRISM: every Pydantic model, enum, identity function, and on-disk format that other workstreams code against.
+Canonical data-model reference for Axiom: every Pydantic model, enum, identity function, and on-disk format that other workstreams code against.
 
 **Owner:** Prabinder Singh
 **Last updated:** 2026-09-15
@@ -57,11 +57,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 
-class PrismModel(BaseModel):
-    """Base class for every PRISM schema model.
+class AxiomModel(BaseModel):
+    """Base class for every Axiom schema model.
 
     `extra="forbid"` is deliberate: a typo'd field name in a config file or a
-    stale `chunks.jsonl` written by an older PRISM build must fail loudly at
+    stale `chunks.jsonl` written by an older Axiom build must fail loudly at
     load time rather than being silently dropped and producing a subtly wrong
     index. `frozen=True` makes every schema object hashable and safe to share
     across the ONNX embedding thread pool without defensive copying.
@@ -173,11 +173,11 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator, model_validator
 
-from axiom.schema._base import PrismModel
+from axiom.schema._base import AxiomModel
 from axiom.schema.enums import ChunkKind
 
 
-class ChunkLocation(PrismModel):
+class ChunkLocation(AxiomModel):
     """Exact source location of a chunk: repo-relative path plus line and byte span."""
 
     file_path: str = Field(
@@ -279,7 +279,7 @@ entirely from it. It also carries the version triple (`version_id`, `commit_sha`
 `last_modified`) that makes P1 and the evolutionary bonus possible.
 
 ```python
-class ChunkMetadata(PrismModel):
+class ChunkMetadata(AxiomModel):
     """Retrieval-relevant facts about a chunk: symbol identity, graph edges, provenance."""
 
     symbol: str | None = Field(
@@ -411,7 +411,7 @@ The atomic unit of retrieval. Every index row, every score, every result traces 
 mechanism behind both incremental reindexing and cross-version embedding dedup.
 
 ```python
-class Chunk(PrismModel):
+class Chunk(AxiomModel):
     """One retrievable code snippet: text, exact location, and retrieval metadata."""
 
     chunk_id: str = Field(
@@ -523,12 +523,12 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator, model_validator
 
-from axiom.schema._base import PrismModel
+from axiom.schema._base import AxiomModel
 from axiom.schema.chunk import Chunk
 from axiom.schema.enums import QueryType, SignalKind
 
 
-class ScoredChunk(PrismModel):
+class ScoredChunk(AxiomModel):
     """A single (chunk, score, rank) triple emitted by one retrieval signal."""
 
     chunk_id: str = Field(
@@ -584,7 +584,7 @@ and what makes fusion debuggable. When a query returns something absurd, `contri
 in one glance whether the dense, sparse, or structural leg misfired.
 
 ```python
-class FusedResult(PrismModel):
+class FusedResult(AxiomModel):
     """A chunk after Reciprocal Rank Fusion, optionally after cross-encoder reranking."""
 
     chunk_id: str = Field(
@@ -682,7 +682,7 @@ Keeping it separate from `FusedResult` means we can change the internals of fusi
 the public contract in [API.md](API.md).
 
 ```python
-class RetrievalResult(PrismModel):
+class RetrievalResult(AxiomModel):
     """A user-facing search hit: the snippet, its location, its score, and why it matched."""
 
     chunk: Chunk = Field(..., description="The full retrieved chunk, text included.")
@@ -760,11 +760,11 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
-from axiom.schema._base import PrismModel
+from axiom.schema._base import AxiomModel
 from axiom.schema.enums import QueryType, SignalKind
 
 
-class QueryPlan(PrismModel):
+class QueryPlan(AxiomModel):
     """The agent's plan for one retrieval pass: classification, expansion, and weights."""
 
     original_query: str = Field(
@@ -820,7 +820,7 @@ class QueryPlan(PrismModel):
 |---|---|---|---|---|
 | `original_query` | `str` | yes | Raw user query | non-empty; identical across all passes of one request |
 | `query_type` | `QueryType` | yes | Classification | one of four |
-| `sub_queries` | `list[str]` | no (`[]`) | Decomposition | each non-empty; `len <= 4` |
+| `sub_queries` | `list[str]` | no (`[]`) | Decomposition | each non-empty; **no schema-level length bound** — the cap is `MAX_SUB_QUERIES = 3` in `agent/planner.py`, applied by the planner before the plan is constructed (`proposed[:MAX_SUB_QUERIES]`). Earlier revisions of this row claimed `len <= 4`; no such `Field` constraint exists, and 4 was never the bound. |
 | `extracted_identifiers` | `list[str]` | no (`[]`) | Code identifiers | valid JS identifier shape; deduped, order preserved |
 | `expansion_terms` | `list[str]` | no (`[]`) | Added vocabulary | deduped; disjoint from `extracted_identifiers` |
 | `strategy_weights` | `dict[SignalKind, float]` | yes | RRF weights | non-empty; all `>= 0`; sums to `1.0 ± 1e-6` |
@@ -863,11 +863,11 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
-from axiom.schema._base import PrismModel
+from axiom.schema._base import AxiomModel
 from axiom.schema.chunk import Chunk
 
 
-class SnippetFamily(PrismModel):
+class SnippetFamily(AxiomModel):
     """A group of near-identical chunks representing one snippet across versions."""
 
     family_id: str = Field(
@@ -981,7 +981,7 @@ incremental reindex can diff against it), and which version it descends from (so
 layer can order versions without a git repo).
 
 ```python
-class VersionManifest(PrismModel):
+class VersionManifest(AxiomModel):
     """Descriptor for one built index version: provenance, coverage, and model identity."""
 
     version_id: str = Field(
@@ -1087,7 +1087,7 @@ class VersionManifest(PrismModel):
 
 ## 13. Identity and hashing
 
-All PRISM digests are **blake2b with `digest_size=16`** (128-bit), rendered as 32 lowercase hex
+All Axiom digests are **blake2b with `digest_size=16`** (128-bit), rendered as 32 lowercase hex
 characters. blake2b is chosen over SHA-256 because it is faster on ARM and x86 without
 hardware SHA extensions (which the CPU-only reference box may lack), and over MD5 because MD5's
 collision weakness is an unnecessary liability in a content-addressed store. 128 bits gives a
@@ -1365,7 +1365,7 @@ Two models producing two dims means blobs are model-scoped in practice; the guar
 ### 14.6 `sparse.bm25s/`
 
 Native `bm25s` on-disk format, written by `BM25.save(path)` and read by `BM25.load(path,
-mmap=True)`. PRISM treats the directory as opaque with one addition: PRISM writes
+mmap=True)`. Axiom treats the directory as opaque with one addition: Axiom writes
 `sparse.bm25s/prism_meta.json` alongside it recording the tokeniser configuration, because bm25s
 does not persist the tokeniser and a query tokenised differently from the corpus silently returns
 garbage.
@@ -1514,7 +1514,7 @@ Design notes worth knowing before you touch this schema:
 ## 15. Invariants
 
 These hold at every observable boundary. Each is checkable, and `axiom index verify` checks all of
-them. A violation is a bug in PRISM, never an input-data problem to be tolerated.
+them. A violation is a bug in Axiom, never an input-data problem to be tolerated.
 
 1. **Ids are opaque and stable.** `chunk_id`, `content_hash`, and `family_id` are exactly 32
    lowercase hex characters. No component truncates, uppercases, prefixes, URL-escapes, or
@@ -1575,14 +1575,14 @@ Two independent version numbers exist and must not be confused:
 | `PRAGMA user_version` | `structural.sqlite` | the SQL schema | `1` |
 | `version_id` | `registry.json`, `manifest.json` | a *corpus* version (user-facing) | n/a |
 
-`version_id` identifies code being indexed. `schema_version` identifies the format PRISM writes.
+`version_id` identifies code being indexed. `schema_version` identifies the format Axiom writes.
 They change for entirely unrelated reasons.
 
 ### 16.1 Change classification
 
 | Class | Example | Requires | Reindex |
 |---|---|---|---|
-| **Additive-optional** | new `ChunkMetadata` field with a default | bump `schema_version`; readers of gen `N` refuse gen `N+1` (`extra="forbid"`) | next cold build; existing indexes stay queryable by the matching PRISM version |
+| **Additive-optional** | new `ChunkMetadata` field with a default | bump `schema_version`; readers of gen `N` refuse gen `N+1` (`extra="forbid"`) | next cold build; existing indexes stay queryable by the matching Axiom version |
 | **Additive-required** | new required field on `Chunk` | bump `schema_version`; write a migration in `src/axiom/schema/migrations/` | full reindex |
 | **Rename** | `calls` → `callees` | ADR in [Decisions.md](Decisions.md) + bump | full reindex |
 | **Semantic** | `end_line` becomes exclusive | ADR + bump + explicit note in this document | full reindex |
@@ -1593,10 +1593,19 @@ They change for entirely unrelated reasons.
 
 1. **No in-place mutation of a built index.** Versions are immutable. A schema change produces a
    new `version_id`, it never rewrites `index/v2.3.1/`.
-2. **Readers refuse unknown generations.** Loading a `schema_version` greater than the running
-   build's raises `PrismSchemaVersionError` with both numbers and the remediation command. Silent
-   best-effort parsing is prohibited: it produces indexes that are subtly wrong rather than
-   loudly broken.
+2. **Readers refuse unknown generations — SPECIFIED, NOT YET IMPLEMENTED (2026-09-23).** The
+   intent is that loading a `schema_version` greater than the running build's fails loudly with
+   both numbers and a remediation command. **No such check exists in `src/` today.**
+   `schema_version` is *written* by `indexing/manifest.py`, `indexing/sparse.py` and
+   `indexing/dense.py`, but `manifest.py:389` reads it back through
+   `int(raw.get("schema_version", REGISTRY_SCHEMA_VERSION))` and never compares it, and there is
+   no `SchemaVersionError` in `core/errors.py` (which defines exactly `AxiomError`,
+   `AxiomContractError`, `IndexNotFoundError`, `DegradationExhaustedError`). An index written by a
+   future generation will therefore be parsed best-effort — precisely the failure this rule
+   prohibits. Earlier revisions of this section named `PrismSchemaVersionError`, a class that has
+   never existed. Since `schema_version` is `1` everywhere for the release tag, nothing can
+   currently trigger the condition; this is a gap to close before a second generation is ever
+   written, not a live defect.
 3. **Hash functions are frozen for the build window.** `compute_chunk_id`,
    `compute_content_hash`, `compute_family_id`, and `normalise_for_hash` cannot change between
    2026-09-15 and 2026-09-27 without an ADR, because any change invalidates every blob in
@@ -1616,7 +1625,7 @@ They change for entirely unrelated reasons.
 ### 16.3 Backward-compatibility guarantee for the submission
 
 For the release tagged `PRISM_GENAI_HACKATHON_Y2026`, `schema_version` is `1` and
-`PRAGMA user_version` is `1`. Any index built by any PRISM commit on the release tag is readable by
+`PRAGMA user_version` is `1`. Any index built by any Axiom commit on the release tag is readable by
 any other commit on that tag. That guarantee is what lets Parth publish
 `appsretrieval_results.json` from an index built on a different machine than the one that runs the
 live demo.

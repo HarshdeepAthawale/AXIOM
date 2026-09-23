@@ -264,8 +264,7 @@ Edition (Theme 01) submission. It does not include, and should never be read as 
 history of the team's **earlier and entirely unrelated** project also named Axiom: a
 verifier-centric framework with a 5-head Process Reward Model (XD-PRM), built by two of this team's
 four members for the separate Samsung ennovateX AX Hackathon 2026 (Problem Statement 06), described
-in [`PROJECT_OVERVIEW.md`](../PROJECT_OVERVIEW.md) Appendix C — an
-document retained for provenance only.
+in [`PROJECT_OVERVIEW.md`](../PROJECT_OVERVIEW.md) Appendix C.
 
 The name collision is deliberate and explained in full in
 [`ADR-015`](Decisions.md#adr-015--rename-prism-to-axiom): this project was originally named PRISM

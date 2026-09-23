@@ -13,3 +13,4 @@ models/
 *.gguf
 appsretrieval_results.json
 .axiom*/
+data/eval_cache/

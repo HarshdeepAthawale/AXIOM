@@ -20,8 +20,9 @@ there is no Day 10 any more. Anything in another document still citing a Day 6�
 
 The re-baseline is not a slip being absorbed — it is a change of subject. **The system is built.**
 As of 2026-09-23 the repository contains 69 Python modules (~27k lines) under `src/axiom/`,
-`scripts/` and `tests/`, with 403 tests collected — **397 passing and 6 failing**, see item 6
-below — and `ruff` clean:
+`scripts/` and `tests/`, with **611 tests collected, 611 passing and 0 failing** (verified
+2026-09-23 on the real stack: tree-sitter, bm25s, faiss-cpu, onnxruntime and real MiniLM ONNX
+weights all present), `ruff check` clean and `ruff format --check` clean:
 
 | Landed | Where |
 |---|---|
@@ -37,27 +38,55 @@ below — and `ruff` clean:
 
 What is **not** done is the part that is actually scored:
 
-1. **No real model has ever been run.** Every test uses `FakeEmbedder` / `FakeCrossEncoder` /
-   `FakeLLM`. No ONNX artifact has been exported; no weight has been downloaded.
-2. **No retrieval-quality number exists.** NDCG@10, MRR and Recall@100 are unmeasured. There is
-   no `appsretrieval_results.json`.
+1. **One real model has been run; the configured primary has not.**
+   `sentence-transformers/all-MiniLM-L6-v2` INT8 ONNX is live at
+   `data/models/onnx/all-minilm-l6-v2-int8/` and has been used for a full eval run. Its pooling was
+   verified three ways (against the model's own `1_Pooling/config.json`, against a
+   `sentence_transformers` fp32 reference at min per-vector cosine 0.9958, and behaviourally).
+   **`Qwen/Qwen3-Embedding-0.6B` — the configured primary on every profile — has never been
+   downloaded or run.** No reranker weights exist either, so every number below was produced with
+   rerank in passthrough. The `optimum` export tooling named in `Setup.md` §7.2 is still not
+   installed and still not declared in any `pyproject.toml` extra.
+2. **A retrieval-quality number now exists, and it is a long way below the gate.** On the **full**
+   CoIR `AppsRetrieval` test split (8,765 documents, 3,765 queries, no `--limit`):
+
+   | arm | NDCG@10 | MRR@10 | Recall@100 |
+   |---|---|---|---|
+   | sparse only (`LexicalBackend`) | 0.91 | 0.76 | 8.26 |
+   | **dense only — baseline `B`** | **7.59** | 6.39 | **27.22** |
+   | hybrid RRF (dense 0.85 / sparse 0.15) | 7.80 | 6.61 | 27.22 |
+
+   Hybrid over our own dense-only baseline is **+0.21 NDCG@10 = +2.76% relative**. All three runs
+   are correctly stamped `reportable: false` (7 active placeholders, embedder ≠ configured
+   primary, dirty tree). Rows are logged in `artifacts/experiments.csv`; raw predictions are under
+   `data/eval_runs/`. There is still no `appsretrieval_results.json`.
+
+   Two facts the gates have to absorb: **Recall@100 is 27.22%**, so roughly three-quarters of
+   relevant documents never enter the candidate pool and no reranker or agent pass can reach them;
+   and the **sparse leg adds zero recall** (27.224 → 27.224), which is the first evidence bearing
+   on `OQ-02`'s placeholder `eval_sparse_weight = 0.15`.
 3. **No demo repo exists.** `data/demo_repo/` is empty; `OQ-07` is unresolved.
 4. **No PPT and no demo video exist.**
 5. **The repo is not reproducible from a clean clone.** There is no `uv.lock` and no
    `.github/workflows/ci.yml`, both of which `NFR-09`/`NFR-11` assert.
-6. **The suite is not green.** Six tests fail on the current tree, from two unrelated defects,
-   both Day-1 and both blocking `M0`:
+6. **The suite is green — and the two defects that made it red are resolved.** Recorded here
+   because the history matters for what the suite is worth. As of 2026-09-23 it is **611/611
+   passing**, exercising the top rung of every ladder rather than the bare install:
    - **`T-019` — chunk spans (4 failures).** A chunk that does not begin at column 0 — every
      method, every nested function — gets a `start_byte` at the declaration token but a
      `start_line` covering the whole line, so `chunk.text` is the byte slice while the line span is
-     wider. The two disagree by the leading indentation, breaking Schema §4. It matters beyond the
-     test: `chunk_id` binds `file_path` and `start_line`, and every `file:line` header the jury
-     sees comes from the same pair.
+     wider. The two disagree by the leading indentation, breaking Schema §4. **Fixed.** It
+     mattered beyond the test: `chunk_id` binds `file_path` and `start_line`, and every
+     `file:line` header the jury sees comes from the same pair. Anything that renders a chunk by
+     re-reading the source file between those line numbers — the Streamlit UI, any "jump to line"
+     — must still be checked against `chunk.text`, which is what the CLI renders and what was
+     scored.
    - **`T-020` — two tests assume `faiss-cpu` is absent (2 failures).** They assert the numpy
      fallback (`dense_backend == "numpy"`, `dense.npy`) and fail once the optional `retrieval`
-     extra is installed and the real rung runs. Cheap to fix, and it carries the more uncomfortable
-     implication: the green suite reported earlier was green partly because the faiss path was not
-     executing.
+     extra is installed and the real rung runs. **Fixed** — both assertions are now rung-aware.
+     The uncomfortable implication stands and is worth keeping in view: the "400 tests passing"
+     reported before 2026-09-23 was green partly because none of the optional backends were
+     installed, so the faiss, bm25s and ONNX paths were not being executed at all.
 
 The gates below are therefore re-derived to gate **measurement and packaging**, not construction.
 Where a gate used to say "component X lands," it now says "component X produces a number that is
