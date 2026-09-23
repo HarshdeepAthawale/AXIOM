@@ -626,6 +626,7 @@ All settings are `pydantic-settings` v2 fields with the `AXIOM_` prefix, layered
 |---|---|---|---|
 | `AXIOM_API_HOST` | str | `127.0.0.1` | Bind address for `axiom serve`. Use `0.0.0.0` inside Docker. |
 | `AXIOM_API_PORT` | int | `8000` | API port. |
+| `AXIOM_API_CORS_ORIGINS` | str | *(unset)* | Comma-separated browser origins allowed to call the API, or `*`. Unset installs no CORS middleware at all. Needed only when a browser frontend is served from its own port — see [API.md §2](API.md#2-base-url-and-transport). |
 | `AXIOM_UI_PORT` | int | `8501` | Streamlit port. |
 | `AXIOM_API_BASE_URL` | str | `http://127.0.0.1:8000` | Where the Streamlit UI looks for the API. |
 
@@ -687,6 +688,8 @@ AXIOM_STABILITY_BONUS=0.10
 # ---- services ----
 AXIOM_API_HOST=127.0.0.1
 AXIOM_API_PORT=8000
+# Leave unset unless a browser frontend runs on its own port:
+# AXIOM_API_CORS_ORIGINS=http://localhost:5173
 AXIOM_UI_PORT=8501
 
 # ---- third party ----

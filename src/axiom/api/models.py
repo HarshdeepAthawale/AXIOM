@@ -214,6 +214,9 @@ def flatten_timings(ledger: Any) -> dict[str, float]:
     ran more than once (the agent loop's second pass re-runs ``dense``) is summed,
     because the question the field answers is "where did the wall clock go".
     """
+    flat = getattr(ledger, "as_flat_dict", None)
+    if callable(flat):
+        return dict(flat())
     totals: dict[str, float] = {}
     for stage in getattr(ledger, "stages", []):
         totals[stage.stage] = round(totals.get(stage.stage, 0.0) + stage.elapsed_ms, 3)
@@ -377,8 +380,14 @@ class IndexSummary(ApiModel):
     elapsed_ms: float = Field(..., ge=0.0)
     timings: dict[str, float] = Field(default_factory=dict)
     file_count: int = Field(default=0, ge=0)
+    embedding_model: str = Field(
+        default="", description="Model id the blobs were actually written with."
+    )
+    embedding_dim: int = Field(default=0, ge=0)
     dense_backend: str = Field(default="")
-    dense_index_kind: str = Field(default="")
+    dense_index_kind: str = Field(
+        default="", description="The manifest's ``index_kind`` (``flat_ip`` or ``ivf_pq``)."
+    )
     sparse_backend: str = Field(default="")
     structural_skipped: bool = Field(default=False)
     degradations: list[str] = Field(default_factory=list)
@@ -392,6 +401,8 @@ class IndexSummary(ApiModel):
             elapsed_ms=round(report.elapsed_ms, 3),
             timings=flatten_timings(report.ledger),
             file_count=report.file_count,
+            embedding_model=report.manifest.embedding_model,
+            embedding_dim=report.manifest.embedding_dim,
             dense_backend=report.dense_backend,
             dense_index_kind=report.dense_index_kind,
             sparse_backend=report.sparse_backend,

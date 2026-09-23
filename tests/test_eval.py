@@ -602,14 +602,16 @@ class TestBackendResolution:
         ],
     )
     def test_an_unusable_spec_degrades_loudly_instead_of_dying(
-        self, spec: str, settings: Any, caplog: pytest.LogCaptureFixture
+        self, spec: str, settings: Any, axiom_caplog: pytest.LogCaptureFixture
     ) -> None:
         from axiom.eval.mteb_adapter import LexicalBackend, resolve_backend
 
-        with caplog.at_level("WARNING"):
+        with axiom_caplog.at_level("WARNING"):
             backend = resolve_backend(spec, settings)
         assert isinstance(backend, LexicalBackend)
-        assert any("lexical BM25 fallback" in record.message for record in caplog.records)
+        assert any(
+            "lexical BM25 fallback" in record.message for record in axiom_caplog.records
+        )
 
     def test_a_factory_is_given_settings_only_when_it_names_the_parameter(
         self, settings: Any, monkeypatch: pytest.MonkeyPatch

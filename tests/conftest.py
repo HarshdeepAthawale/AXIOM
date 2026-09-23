@@ -105,6 +105,34 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
     )
 
 
+@pytest.fixture
+def axiom_caplog(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptureFixture]:
+    """``caplog``, but it can actually see Axiom's records.
+
+    :func:`~axiom.core.logging.configure_logging` sets ``propagate = False`` on
+    the ``axiom`` logger, and ``_quieten_axiom_logging`` calls it before the
+    first test runs. ``caplog`` installs its handler on the *root* logger, so
+    with propagation off no Axiom record ever reaches it -- a test asserting
+    "this degradation was logged loudly" then fails, or worse passes only
+    because some earlier test happened to reset the flag. Either way the
+    assertion is about the ambient logging configuration rather than about the
+    behaviour under test.
+
+    This attaches ``caplog``'s handler straight to the ``axiom`` logger and
+    lowers its level for the duration, so the assertion is about the record the
+    code emits and nothing else. Restores both on the way out.
+    """
+    logger = logging.getLogger("axiom")
+    previous_level = logger.level
+    logger.addHandler(caplog.handler)
+    logger.setLevel(logging.DEBUG)
+    try:
+        yield caplog
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(previous_level)
+
+
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:
     """Root of the committed synthetic fixtures."""

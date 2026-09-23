@@ -64,15 +64,29 @@ not imply a `/v2/` is planned or that this doc promises compatibility across cha
 |---|---|---|---|
 | Bind host | `AXIOM_API_HOST` | `127.0.0.1` | `0.0.0.0` inside Docker only, per [Deployment.md](Deployment.md) |
 | Bind port | `AXIOM_API_PORT` | `8000` | [Setup.md §7.6](Setup.md#76-services) |
+| Allowed browser origins | `AXIOM_API_CORS_ORIGINS` | *(unset)* | Comma-separated exact origins, or `*`. Unset means no CORS middleware at all |
 | Client base URL (used by the Streamlit UI) | `AXIOM_API_BASE_URL` | `http://127.0.0.1:8000` | [Setup.md §7.6](Setup.md#76-services) |
 
 The full environment-variable reference is owned by [Setup.md §7](Setup.md#7-environment-variables);
 this document names only the variables that directly shape the request/response contract.
 
 Start the server with `axiom serve` (see §7). Every request and response body is `application/json`,
-UTF-8, no trailing newline requirement. There is no CORS configuration — the surface is loopback-only
-by default per §1, and adding permissive CORS to a same-origin-assumption dev server would widen the
-trust boundary described in [Security.md](Security.md) for no benefit this project needs.
+UTF-8, no trailing newline requirement.
+
+**CORS is off unless you ask for it.** `AXIOM_API_CORS_ORIGINS` takes a comma-separated list of exact
+browser origins (`http://localhost:5173,http://127.0.0.1:5173`), or `*`. Unset — the default — no CORS
+middleware is installed at all and the surface behaves exactly as [Security.md](Security.md) describes
+it. This exists for one reason: a browser frontend served from its own dev-server port is
+cross-origin, and no amount of correct backend code makes the browser send that request without it.
+It is an opt-in rather than a default because this surface is unauthenticated per §1, so a permissive
+CORS header is the difference between "a local dev server" and "any page the user has open can read
+their source index".
+
+When it is on: `allow_methods` is `GET, POST, OPTIONS` and `allow_headers` is `content-type` — the
+methods and header the four endpoints actually use, not `*`. `allow_credentials` is always `false`,
+in both the explicit-origin and `*` modes; there is no cookie or session on this surface for a
+browser to attach. A `*` value is honoured for a demo whose frontend port is not stable, and logs a
+`WARNING` when it is used.
 
 ---
 
@@ -539,9 +553,15 @@ the same Pydantic models as the CLI."
 | `axiom classify` | The [`QueryPlan`](Schema.md#10-queryplan) object alone, unwrapped |
 | `axiom versions` | Identical shape to `GET /v1/versions` (§3.2): `active_version`, `versions` |
 | `axiom families` | `list[`[`SnippetFamily`](Schema.md#11-snippetfamily)`]` |
-| `axiom index` / `axiom reindex` | `IndexSummary`: `version_id`, `chunk_count`, `elapsed_ms`, `timings`, `file_count`, `dense_backend`, `dense_index_kind`, `sparse_backend`, `structural_skipped`, `degradations`. `timings` is keyed by the index-path stage tags in [Rules.md §9.1](Rules.md#91-logging-discipline) (`walk`, `diff`, `chunk`, `dense`, `sparse`, `struct`, `blob`, `write`, `index`, `manifest`) |
+| `axiom index` | `IndexSummary`: `version_id`, `chunk_count`, `elapsed_ms`, `timings`, `file_count`, `embedding_model`, `embedding_dim`, `dense_backend`, `dense_index_kind`, `sparse_backend`, `structural_skipped`, `degradations` |
+| `axiom reindex` | The incremental report — every `IndexSummary` field that still applies (`version_id`, `chunk_count`, `elapsed_ms`, `timings`, `degradations`) plus the carry-over accounting that is the whole point of the incremental path: `parent_version`, `strategy`, `files_chunked`, `files_dropped`, `chunks_carried`, `chunks_rebuilt`, `chunks_dropped`, `blobs_reused`, `blobs_written`, `embed_calls`, `missing_embeddings`. Not `IndexSummary`: forcing it into that shape would drop the reuse counters `FR-19` is measured by |
 | `axiom eval` | The MTEB `TaskResult` shape written to `appsretrieval_results.json` ([`FR-22`](PRD.md#5-functional-requirements)), echoed to stdout |
 | `axiom serve` / `axiom ui` | Not applicable — these are long-running processes; `--json` has no effect beyond structured startup logging ([Setup.md §7.1](Setup.md#71-core), `AXIOM_LOG_FORMAT=json`) |
+
+In both index rows `timings` is a flat `dict[str, float]` keyed by the index-path stage tags in
+[Rules.md §9.1](Rules.md#91-logging-discipline) (`walk`, `diff`, `chunk`, `dense`, `sparse`, `struct`,
+`blob`, `write`, `index`, `manifest`); a stage that ran more than once is summed. The richer nested
+per-stage record stays in the server log rather than on the wire.
 
 Non-`--json` output for `axiom query`/`axiom classify`/`axiom versions`/`axiom families` is a
 human-readable rendering of the identical underlying model — never a different set of fields, only

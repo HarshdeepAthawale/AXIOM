@@ -118,21 +118,21 @@ class IndexReport:
     elapsed_ms: float = 0.0
 
     def as_dict(self) -> dict[str, object]:
-        """API.md section 7.4's index-build summary object."""
-        return {
-            "version_id": self.manifest.version_id,
-            "chunk_count": self.chunk_count,
-            "file_count": self.file_count,
-            "embedding_model": self.manifest.embedding_model,
-            "embedding_dim": self.manifest.embedding_dim,
-            "index_kind": self.manifest.index_kind,
-            "dense_backend": self.dense_backend,
-            "sparse_backend": self.sparse_backend,
-            "structural_skipped": self.structural_skipped,
-            "degradations": list(self.degradations),
-            "elapsed_ms": round(self.elapsed_ms, 3),
-            "timings": self.ledger.as_dict(),
-        }
+        """The documented ``axiom index --json`` body (API.md section 8).
+
+        Delegates to :class:`~axiom.api.models.IndexSummary` rather than
+        rebuilding the field list here. An earlier hand-written copy had already
+        drifted from the documented shape in two ways -- it emitted ``index_kind``
+        where the contract says ``dense_index_kind``, and a nested
+        ``{total_ms, stages}`` record where the contract types ``timings`` as a
+        flat ``dict[str, float]`` -- which is precisely the second copy
+        ``IndexSummary``'s own docstring exists to prevent. The import is local
+        because ``axiom.api.models`` is pydantic-only but still not something the
+        pipeline should depend on at import time.
+        """
+        from axiom.api.models import IndexSummary
+
+        return IndexSummary.from_report(self).model_dump(mode="json")
 
 
 def _file_hashes(root: Path, settings: Settings) -> dict[str, str]:

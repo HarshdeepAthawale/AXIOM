@@ -935,3 +935,98 @@ class TestCliAndApiDoNotDrift:
         assert [v["version_id"] for v in cli["versions"]] == [
             v["version_id"] for v in api["versions"]
         ]
+
+
+# ---------------------------------------------------------------------------
+# CORS -- opt-in, and silent when nobody opted in
+# ---------------------------------------------------------------------------
+
+
+class TestCorsOptIn:
+    """``AXIOM_API_CORS_ORIGINS`` (API.md section 2).
+
+    The default matters more than the feature: this surface is unauthenticated
+    by design (NG-08), so a CORS header that appears without anyone asking for
+    it is the difference between a local dev server and something any open tab
+    can read the user's source index through. Every test here therefore pins one
+    half of that -- what happens when it is unset, and what exactly is allowed
+    when it is set.
+    """
+
+    ORIGIN = "http://localhost:5173"
+
+    @staticmethod
+    def _client(api_index: Any, origins: str | None, monkeypatch: Any) -> Any:
+        pytest.importorskip("fastapi", reason="the serve extra is not installed")
+        pytest.importorskip("httpx", reason="TestClient needs httpx")
+        from fastapi.testclient import TestClient
+
+        from axiom.api.app import CORS_ORIGINS_ENV, create_app
+
+        if origins is None:
+            monkeypatch.delenv(CORS_ORIGINS_ENV, raising=False)
+        else:
+            monkeypatch.setenv(CORS_ORIGINS_ENV, origins)
+        return TestClient(create_app(api_index), raise_server_exceptions=False)
+
+    def test_unset_means_no_cors_header_at_all(self, api_index: Any, monkeypatch: Any) -> None:
+        """The default posture: a cross-origin browser request gets nothing."""
+        with self._client(api_index, None, monkeypatch) as client:
+            response = client.get("/v1/health", headers={"Origin": self.ORIGIN})
+        assert response.status_code == 200
+        assert "access-control-allow-origin" not in response.headers
+
+    def test_a_named_origin_is_allowed(self, api_index: Any, monkeypatch: Any) -> None:
+        with self._client(api_index, self.ORIGIN, monkeypatch) as client:
+            response = client.get("/v1/health", headers={"Origin": self.ORIGIN})
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == self.ORIGIN
+
+    def test_an_unnamed_origin_is_not_allowed(self, api_index: Any, monkeypatch: Any) -> None:
+        """Allow-listing one origin must not allow-list every origin."""
+        with self._client(api_index, self.ORIGIN, monkeypatch) as client:
+            response = client.get("/v1/health", headers={"Origin": "http://evil.example"})
+        assert "access-control-allow-origin" not in response.headers
+
+    def test_the_query_preflight_succeeds(self, api_index: Any, monkeypatch: Any) -> None:
+        """``POST /v1/query`` with a JSON body is preflighted; the frontend dies without this."""
+        with self._client(api_index, self.ORIGIN, monkeypatch) as client:
+            response = client.options(
+                "/v1/query",
+                headers={
+                    "Origin": self.ORIGIN,
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type",
+                },
+            )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == self.ORIGIN
+        assert "POST" in response.headers["access-control-allow-methods"]
+
+    def test_credentials_are_never_allowed(self, api_index: Any, monkeypatch: Any) -> None:
+        """There is no session on this surface, so a browser must not attach one."""
+        with self._client(api_index, self.ORIGIN, monkeypatch) as client:
+            response = client.get("/v1/health", headers={"Origin": self.ORIGIN})
+        assert "access-control-allow-credentials" not in response.headers
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("", []),
+            ("   ", []),
+            (",,", []),
+            ("http://a", ["http://a"]),
+            ("http://a/", ["http://a"]),
+            (" http://a , http://b ", ["http://a", "http://b"]),
+            ("http://a,http://a", ["http://a"]),
+            ("*", ["*"]),
+        ],
+    )
+    def test_origin_parsing(
+        self, raw: str, expected: list[str], monkeypatch: Any
+    ) -> None:
+        """Parsing is pure and importable on a bare install -- no FastAPI needed."""
+        from axiom.api.app import CORS_ORIGINS_ENV, cors_origins
+
+        monkeypatch.setenv(CORS_ORIGINS_ENV, raw)
+        assert cors_origins() == expected

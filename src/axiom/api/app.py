@@ -20,10 +20,13 @@ ASGI rather than a ``BaseHTTPMiddleware`` subclass, because the latter wraps
 ``receive`` in a way that makes reading the body twice a known hazard -- and
 reading the body is the entire job here.
 
-**No CORS, no auth, and both stated in the OpenAPI description.** NG-08 makes
-this surface dev-only and unauthenticated by deployment posture, not by
-oversight; the description says so, so nobody reading ``/docs`` has to guess
-whether it was forgotten.
+**No auth, and CORS off unless asked for -- both stated in the OpenAPI
+description.** NG-08 makes this surface dev-only and unauthenticated by
+deployment posture, not by oversight; the description says so, so nobody reading
+``/docs`` has to guess whether it was forgotten. CORS is the one part of that
+posture a browser frontend has to relax, so it is a named opt-in
+(``AXIOM_API_CORS_ORIGINS``, see :func:`cors_origins`) that changes nothing when
+unset, rather than a permissive default nobody remembers agreeing to.
 """
 
 from __future__ import annotations
@@ -53,6 +56,18 @@ SERVE_INSTALL_HINT = (
 #: Modules ``axiom serve`` cannot run without.
 SERVE_REQUIREMENTS = ("fastapi", "uvicorn")
 
+#: Environment variable naming the browser origins allowed to call this API.
+#: Comma-separated, exact origins (``http://localhost:5173``), or ``*``.
+CORS_ORIGINS_ENV = "AXIOM_API_CORS_ORIGINS"
+
+#: Methods the four documented endpoints actually use, plus the preflight verb.
+#: Not ``*``: a browser has no reason to be told this surface accepts ``DELETE``.
+CORS_METHODS = ("GET", "POST", "OPTIONS")
+
+#: Request headers a JSON client needs. ``content-type`` is the one that makes a
+#: ``POST /v1/query`` non-simple and therefore triggers the preflight at all.
+CORS_HEADERS = ("content-type",)
+
 #: OpenAPI description. Stated in the schema rather than in a README nobody
 #: opens next to ``/docs``.
 API_DESCRIPTION = """
@@ -61,9 +76,10 @@ retrieval, reciprocal rank fusion, a bounded agent refinement loop, and an
 optional cross-encoder rerank.
 
 **This service is dev-only and unauthenticated by design** (NG-08): no login, no
-API key, no RBAC, no rate limiting, no CORS. It binds loopback by default and
-grants no privilege the filesystem did not already grant -- anyone who can read
-the index can already read the repository it was built from. It carries no
+API key, no RBAC, no rate limiting, and no CORS unless `AXIOM_API_CORS_ORIGINS`
+names the origins allowed to call it. It binds loopback by default and grants no
+privilege the filesystem did not already grant -- anyone who can read the index
+can already read the repository it was built from. It carries no
 uptime guarantee (NG-10) and is not meant to be hosted (NG-13).
 
 Degradation is a 200. A dead signal, a reranker in passthrough, or an exhausted
@@ -124,6 +140,57 @@ def api_host() -> str:
 def api_port(settings: Settings | None = None) -> int:
     """Bind port: ``Settings.api_port``, which already honours ``AXIOM_API_PORT``."""
     return (settings if settings is not None else get_settings()).api_port
+
+
+def cors_origins() -> list[str]:
+    """Browser origins allowed to call this API; empty means CORS stays off.
+
+    Off by default, which is the whole design of this function. NG-08 makes this
+    surface unauthenticated, and CORS is the only thing standing between "a
+    local dev server" and "any page the user happens to have open can read this
+    user's source index". Turning it on is therefore a deliberate act with a
+    named variable behind it, not a default that ships because a frontend was
+    convenient.
+
+    ``*`` is honoured because this is a dev surface and a hackathon frontend may
+    not have a stable port, but it is logged at WARNING when used
+    (:func:`_cors_kwargs`), and credentials are never allowed in either mode --
+    there is no session to carry, so a browser has no business sending one.
+
+    Returns:
+        Origins in declaration order, de-duplicated, whitespace stripped. An
+        unset or all-whitespace variable yields ``[]``.
+    """
+    raw = os.environ.get(CORS_ORIGINS_ENV, "")
+    seen: dict[str, None] = {}
+    for part in raw.split(","):
+        origin = part.strip().rstrip("/")
+        if origin:
+            seen.setdefault(origin, None)
+    return list(seen)
+
+
+def _cors_kwargs(origins: list[str]) -> dict[str, Any]:
+    """Translate resolved origins into ``CORSMiddleware`` arguments."""
+    if "*" in origins:
+        _LOG.warning(
+            "%s is '*': every origin may call this unauthenticated API",
+            CORS_ORIGINS_ENV,
+            extra={"axiom_extra": {"stage": "api", "cors": "wildcard"}},
+        )
+        allow = ["*"]
+    else:
+        allow = origins
+    return {
+        "allow_origins": allow,
+        "allow_methods": list(CORS_METHODS),
+        "allow_headers": list(CORS_HEADERS),
+        # Never true. There is no cookie, no session and no auth header on this
+        # surface (NG-08), so allowing credentials could only ever let a browser
+        # attach one by accident -- and with ``allow_origins=["*"]`` the CORS
+        # spec forbids the combination outright.
+        "allow_credentials": False,
+    }
 
 
 class BodyLimitMiddleware:
@@ -337,6 +404,17 @@ def create_app(settings: Settings | None = None) -> Any:
     app.add_exception_handler(AxiomContractError, _contract_error)
     app.add_exception_handler(Exception, _unhandled)
 
+    origins = cors_origins()
+    if origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(CORSMiddleware, **_cors_kwargs(origins))
+        _LOG.info(
+            "CORS enabled for %d origin(s)",
+            len(origins),
+            extra={"axiom_extra": {"stage": "api", "cors_origins": origins}},
+        )
+
     app.add_middleware(BodyLimitMiddleware)
     app.include_router(build_router(resolved))
 
@@ -404,6 +482,9 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "API_DESCRIPTION",
+    "CORS_HEADERS",
+    "CORS_METHODS",
+    "CORS_ORIGINS_ENV",
     "DEFAULT_API_HOST",
     "SERVE_INSTALL_HINT",
     "SERVE_REQUIREMENTS",
@@ -411,6 +492,7 @@ __all__ = [
     "ServeDependencyError",
     "api_host",
     "api_port",
+    "cors_origins",
     "create_app",
     "missing_dependencies",
     "require_serve_dependencies",

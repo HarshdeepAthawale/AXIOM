@@ -54,7 +54,12 @@ class TimingLedger:
         return sum(s.elapsed_ms for s in self.stages)
 
     def as_dict(self) -> dict[str, object]:
-        """Serialise for the ``timings`` block of a ``--json`` response."""
+        """The full nested record: total, every stage occurrence, and its detail.
+
+        This is the logging shape. The ``timings`` field of a ``--json`` body is
+        typed ``dict[str, float]`` (API.md sections 3.1 and 8), so serialise with
+        :meth:`as_flat_dict` for anything that goes on the wire.
+        """
         return {
             "total_ms": round(self.total_ms, 3),
             "stages": [
@@ -62,6 +67,19 @@ class TimingLedger:
                 for s in self.stages
             ],
         }
+
+    def as_flat_dict(self) -> dict[str, float]:
+        """Collapse to ``stage -> total ms``, the documented wire shape.
+
+        A stage that ran more than once -- the agent loop's second pass re-runs
+        ``dense``, an incremental build re-runs ``chunk`` per file group -- is
+        summed rather than last-write-wins, because the question the field
+        answers is where the wall clock went, not which occurrence was last.
+        """
+        totals: dict[str, float] = {}
+        for stage in self.stages:
+            totals[stage.stage] = round(totals.get(stage.stage, 0.0) + stage.elapsed_ms, 3)
+        return totals
 
 
 class Deadline:

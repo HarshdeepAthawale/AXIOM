@@ -253,12 +253,12 @@ class TestTinyChunkMerge:
 
 class TestDegradation:
     def test_tc021_unparseable_file_degrades_to_the_regex_rung_and_logs(
-        self, repo_v1: Path, settings, caplog: pytest.LogCaptureFixture
+        self, repo_v1: Path, settings, axiom_caplog: pytest.LogCaptureFixture
     ) -> None:
         """TC-021: no exception, at least one chunk, ``calls`` populated by the
         regex fallback, and a WARNING recording the degrade (Rule 3: loud)."""
         source = (repo_v1 / "src/broken/syntax_error.js").read_text(encoding="utf-8")
-        with caplog.at_level(logging.WARNING, logger="axiom"):
+        with axiom_caplog.at_level(logging.WARNING, logger="axiom"):
             chunks = chunk_file(source, "src/broken/syntax_error.js", "v1", settings)
 
         assert chunks, "an unparseable file must still contribute chunks"
@@ -269,7 +269,9 @@ class TestDegradation:
         assert {"preprocessInput", "resolveTool"} <= calls, (
             "the regex fallback must still mine call names out of broken source"
         )
-        assert any(record.levelno >= logging.WARNING for record in caplog.records)
+        assert any(record.levelno >= logging.WARNING for record in axiom_caplog.records), (
+            "Rule 3 requires a degradation to be loud, not silent"
+        )
 
     def test_tc022_empty_file_yields_zero_chunks(self, settings) -> None:
         """TC-022: 0 bytes -> 0 chunks, and an all-whitespace file behaves the same."""

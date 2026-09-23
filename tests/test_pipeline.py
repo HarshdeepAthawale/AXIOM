@@ -161,6 +161,38 @@ class TestIndexBuild:
         _, report = indexed_v1
         json.dumps(report.as_dict(), default=str)
 
+    def test_index_json_is_exactly_the_documented_index_summary(self, indexed_v1) -> None:
+        """API.md section 8: ``axiom index --json`` emits ``IndexSummary``, whole.
+
+        Pinned because the hand-written copy this replaced had drifted twice
+        over -- an ``index_kind`` key where the contract says
+        ``dense_index_kind``, and two fields the contract never listed. A key
+        set compared against the model rather than against a literal means a
+        new ``IndexSummary`` field cannot ship without appearing on the wire.
+        """
+        from axiom.api.models import IndexSummary
+
+        _, report = indexed_v1
+        body = report.as_dict()
+        assert set(body) == set(IndexSummary.model_fields), (
+            "the --json body and IndexSummary must not drift apart"
+        )
+
+    def test_index_json_timings_are_flat_stage_to_milliseconds(self, indexed_v1) -> None:
+        """API.md section 8 types ``timings`` as ``dict[str, float]``.
+
+        The ledger's own ``as_dict`` is a nested ``{total_ms, stages: [...]}``
+        record; that is the logging shape and must not reach the wire, because a
+        client typed against the contract cannot read it.
+        """
+        _, report = indexed_v1
+        timings = report.as_dict()["timings"]
+        assert isinstance(timings, dict) and timings
+        assert all(isinstance(key, str) for key in timings)
+        assert all(isinstance(value, float) for value in timings.values()), (
+            f"nested ledger record leaked onto the wire: {timings!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Query

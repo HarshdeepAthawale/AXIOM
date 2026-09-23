@@ -110,7 +110,7 @@ class ReindexReport:
     missing_embeddings: int = 0
     elapsed_ms: float = 0.0
     degradations: list[str] = field(default_factory=list)
-    timings: dict[str, Any] = field(default_factory=dict)
+    timings: dict[str, float] = field(default_factory=dict)
     manifest_path: str | None = None
 
     def degrade(self, reason: str) -> None:
@@ -119,7 +119,13 @@ class ReindexReport:
             self.degradations.append(reason)
 
     def to_dict(self) -> dict[str, Any]:
-        """The ``--json`` body for ``axiom index`` / ``axiom reindex`` (API.md section 8)."""
+        """The ``--json`` body for ``axiom reindex`` (API.md section 8).
+
+        Deliberately not :class:`~axiom.api.models.IndexSummary`, which is
+        ``axiom index``'s shape: projecting onto it would drop
+        ``blobs_reused``/``embed_calls``, and those counters are how ``FR-19``'s
+        rename-is-free claim is measured rather than asserted.
+        """
         return {
             "version_id": self.version_id,
             "parent_version": self.parent_version,
@@ -763,7 +769,7 @@ def reindex(
         report.manifest_path = str(mf.manifest_path(settings, new_version))
 
     report.elapsed_ms = ledger.total_ms
-    report.timings = ledger.as_dict()
+    report.timings = ledger.as_flat_dict()
     _LOG.info(
         "reindex %s -> %s [%s]: %d chunks, %d embed calls, %d blobs reused",
         parent_version or "(cold)",
