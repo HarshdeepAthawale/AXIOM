@@ -180,6 +180,21 @@ class HybridRrfBackend:
     def degraded(self) -> bool:
         return bool(getattr(self.dense, "degraded", False))
 
+    @property
+    def encoder(self) -> Any:
+        """Surface the dense leg's embedder under the name provenance looks for.
+
+        ``AxiomSearchModel.backend_detail`` reads ``backend.encoder`` to record
+        which model actually answered, and ``run_eval.py`` compares that against
+        the configured ``embedding_model`` -- the NFR-09 check that catches a run
+        silently served by a fallback rung. Without this property the attribute
+        is absent, the comparison is skipped, and a hybrid run whose embedder had
+        degraded would still certify as reportable. A guard that cannot see the
+        thing it guards is worse than no guard, because the artifact then claims
+        a provenance nobody verified.
+        """
+        return getattr(self.dense, "encoder", None)
+
 
 def hybrid(settings: Settings) -> HybridRrfBackend:
     return HybridRrfBackend(

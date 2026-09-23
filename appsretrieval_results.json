@@ -2,7 +2,7 @@
   "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
   "task_name": "AppsRetrieval",
   "mteb_version": "2.21.6",
-  "evaluation_time": 197.305,
+  "evaluation_time": 167.926,
   "kg_co2_emissions": null,
   "scores": {
     "test": [
@@ -38,10 +38,8 @@
   },
   "axiom_provenance": {
     "schema_version": 1,
-    "reportable": false,
-    "non_reportable_because": [
-      "git tree is dirty, so the run is not reproducible"
-    ],
+    "reportable": true,
+    "non_reportable_because": [],
     "mode": "FULL",
     "profile": "eval",
     "profile_file": "/Users/anish/Desktop/prism hack/configs/eval.yaml",
@@ -95,34 +93,34 @@
       "recall_at_100": 27.1713,
       "map_at_10": 6.5988
     },
-    "git_sha": "e2e3879-dirty",
-    "generated_at": "2026-09-23T09:19:55.000194Z",
-    "command": "run_eval.py --task AppsRetrieval --split test --backend scripts.eval_backends:hybrid --profile eval --out appsretrieval_results.json --predictions data/sweeps/appsretrieval_predictions.json",
+    "git_sha": "76aa89e",
+    "generated_at": "2026-09-23T09:35:16.084274Z",
+    "command": "run_eval.py --task AppsRetrieval --split test --backend scripts.eval_backends:hybrid --profile eval --out appsretrieval_results.json",
     "python": "3.11.14",
     "timings": {
-      "total_ms": 197061.857,
+      "total_ms": 167776.147,
       "stages": [
         {
           "stage": "dataset",
-          "elapsed_ms": 17275.694,
+          "elapsed_ms": 15616.08,
           "documents": 8765,
           "queries": 3765,
           "source": "mteb:2.21.6"
         },
         {
           "stage": "index",
-          "elapsed_ms": 3009.758,
+          "elapsed_ms": 1792.01,
           "chunks": 8765
         },
         {
           "stage": "search",
-          "elapsed_ms": 175280.009,
+          "elapsed_ms": 148835.158,
           "queries": 3765,
           "top_k": 100
         },
         {
           "stage": "score",
-          "elapsed_ms": 1496.397,
+          "elapsed_ms": 1532.899,
           "qrels_queries": 3765,
           "queries_with_positives": 3765,
           "answered_queries": 3765,
