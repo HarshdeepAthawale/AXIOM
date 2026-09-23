@@ -12,9 +12,10 @@ Related: [_CONTRACT.md](_CONTRACT.md) · [Schema.md](Schema.md) · [TechSpecific
 
 ## 0. What changed on 2026-09-23, and why
 
-This plan was written before the code. The code now exists — `src/axiom/` plus `tests/`, **611
-tests collected, 611 passing, 0 failing** as of 2026-09-23 (at the time this section was first
-written it was 403 collected, 397 passing, 6 failing; both defects are now closed — see §3.14) —
+This plan was written before the code. The code now exists — `src/axiom/` plus `tests/`, **645
+tests collected, 642 passing, 3 skipped, 0 failing** as of 2026-09-23 (at the time this section was
+first written it was 403 collected, 397 passing, 6 failing; both defects are now closed — see
+§3.14) —
 and a walk of this document against it found that **at
 least nine P0 cases could not pass against a spec-conformant implementation.** They asserted shapes the schema
 rejects, columns the DDL does not define, an inequality that is arithmetically false, and an
@@ -76,10 +77,17 @@ So we split responsibilities hard:
                       └──────────────────────────────┘
 ```
 
-As built, the suite is **611 tests across eleven modules**, all passing (verified 2026-09-23 by
-`pytest --collect-only -q`): `test_schema.py` (107), `test_api.py` (91), `test_eval.py` (82),
-`test_structural.py` (49), `test_pipeline.py` (49), `test_agent.py` (46), `test_scripts.py` (42),
+As built, the suite is **645 tests across eleven modules** (verified 2026-09-23 by
+`pytest --collect-only -q`): `test_api.py` (123), `test_schema.py` (107), `test_eval.py` (82),
+`test_pipeline.py` (51), `test_structural.py` (49), `test_agent.py` (46), `test_scripts.py` (42),
 `test_fusion.py` (41), `test_hashing.py` (36), `test_ui.py` (35), `test_chunking.py` (33).
+
+642 pass and 3 skip. The three skips are the tree-sitter cases in `test_chunking.py`, which require
+the optional `structural` extra; they are skips rather than failures because NFR-07 makes the regex
+rung a supported configuration, not a broken one. A bare install without the `serve` extra skips a
+further 65 — the wire tests that need FastAPI and httpx — and reports **577 passed, 68 skipped**
+(measured, not estimated, by blocking those imports). That is the same suite on a smaller install,
+not a regression. Install `axiom[serve]` to see all of it.
 
 `test_api.py`, `test_eval.py` and `test_ui.py` are new since the 403-test count quoted in earlier
 revisions. Equally important: the optional backends (tree-sitter, bm25s, faiss-cpu, onnxruntime)
@@ -454,7 +462,7 @@ cite them.
 
 ### 3.14 Resolved — the six failures that blocked `M0`
 
-**Both causes are fixed; the suite is 611/611 green as of 2026-09-23.** Kept here because this plan
+**Both causes are fixed; the suite is green as of 2026-09-23 (642 passed, 3 skipped, 0 failed).** Kept here because this plan
 is what the milestone gates read, and because Cause A has a consequence that outlives the red test
 and still needs watching (see the note at the end of Cause A).
 

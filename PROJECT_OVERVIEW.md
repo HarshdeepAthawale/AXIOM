@@ -616,7 +616,7 @@ so is every "Day 10 = 24 Sep" reference that went with it. The build window is n
 this table is a summary of it and loses to it on any disagreement.
 
 The re-baseline is a change of subject, not a slipped schedule. The system is built — 69 modules,
-611 tests passing. What remains is the part that is actually scored: measuring it, and producing a
+642 tests passing. What remains is the part that is actually scored: measuring it, and producing a
 demo and a submission artifact from real numbers.
 
 | Day | Date | Milestone | Who |
