@@ -16,7 +16,12 @@ from axiom.core.hashing import (
     compute_file_hash,
     normalise_for_hash,
 )
-from axiom.core.logging import configure_logging, get_logger, log_degradation
+from axiom.core.logging import (
+    capture_degradations,
+    configure_logging,
+    get_logger,
+    log_degradation,
+)
 from axiom.core.timing import Deadline, StageTiming, TimingLedger
 
 __all__ = [
@@ -28,6 +33,7 @@ __all__ = [
     "StageTiming",
     "TimingLedger",
     "blake2b_128",
+    "capture_degradations",
     "compute_chunk_id",
     "compute_content_hash",
     "compute_family_id",

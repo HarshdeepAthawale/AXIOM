@@ -86,9 +86,22 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="Qwen/Qwen3-Embedding-0.6B")
     embedding_dim: int = Field(default=1024)
     embedding_batch_size: int = Field(default=64)
+    embedding_query_instruction: str = Field(
+        default="Given a natural-language question about a codebase, "
+        "retrieve the code snippets that answer it",
+        description="Task string for the instruction envelope an instruction-tuned "
+        "embedder expects on the QUERY side only. Ignored by models that were not "
+        "trained with one. Committed to configs/ so a reported score is reproducible.",
+    )
     reranker_model: str = Field(default="BAAI/bge-reranker-v2-m3")
     reranker_enabled: bool = Field(default=True)
     reranker_timeout_ms: int = Field(default=2500)
+    rerank_max_chars: int = Field(
+        default=4096,
+        description="Per-document truncation before cross-encoder scoring. Cost is "
+        "quadratic in sequence length for the attention term, so this is the main "
+        "lever on rerank latency alongside fusion_top_n.",
+    )
     llm_model: str = Field(default="Qwen2.5-1.5B-Instruct-Q4_K_M.gguf")
     llm_enabled: bool = Field(default=True)
     llm_max_tokens: int = Field(default=512)
@@ -191,11 +204,7 @@ def get_settings(
     base = load_profile(name, configs_dir)
     base["profile"] = name
 
-    env_set = {
-        field
-        for field in Settings.model_fields
-        if f"AXIOM_{field.upper()}" in os.environ
-    }
+    env_set = {field for field in Settings.model_fields if f"AXIOM_{field.upper()}" in os.environ}
     base = {k: v for k, v in base.items() if k not in env_set}
 
     base.update({k: v for k, v in overrides.items() if v is not None})

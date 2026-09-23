@@ -1,14 +1,23 @@
-# Screening-benchmark profile: CoIR AppsRetrieval (English prose queries, Python
-# solution documents). Structural indexing is skipped entirely, not merely
-# weighted to zero -- APPS documents have no cross-file structure to index
-# (PRD.md 2.2). Sparse is deliberately down-weighted: BM25 scores 4.8 on this
-# task against BGE's 14.7, so equal-weight fusion is a net negative.
+# Screening-benchmark profile: CoIR AppsRetrieval (English prose queries,
+# Python solution documents). Structural indexing is skipped entirely, not
+# merely weighted to zero -- APPS documents have no cross-file structure to
+# index (PRD.md 2.2). Sparse is deliberately down-weighted: BM25 scores far
+# below dense on this task, so equal-weight fusion is a net negative.
+#
+# RERANKER: bge-reranker-v2-m3 stays PRIMARY here -- accuracy is what is scored
+# and this run is offline and untimed. The cost is bought back by narrowing the
+# candidate chain rather than by weakening the model: fusion_top_n 25 -> 5 and
+# rerank_max_chars 4096 -> 1024 cuts the rerank stage roughly 30x
+# (~8,375 GFLOP -> ~250 GFLOP). NOTHING HERE IS A LATENCY CLAIM; no number from
+# this profile may be quoted against NFR-03/NFR-04.
 profile: eval
 dense_enabled: true
 sparse_enabled: true
 structural_enabled: false
 agent_enabled: false
 reranker_enabled: true
-evolutionary_enabled: false
+reranker_model: BAAI/bge-reranker-v2-m3
+fusion_top_n: 5
+rerank_max_chars: 1024
 eval_dense_weight: 0.85
 eval_sparse_weight: 0.15   # PLACEHOLDER, OQ-02, swept by T-112

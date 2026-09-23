@@ -1,0 +1,53 @@
+# 50 natural-language queries for TC-008: identifier extraction must emit no
+# English stopwords and no single-character identifiers unless quoted.
+# Lines starting with '#' and blank lines are ignored by the loader.
+How is the input preprocessed before going to the main function?
+Which files call tool XYZ before tool ABC?
+Where is the Bluetooth-settings deeplink used?
+How does the auth module validate tokens before calling the API?
+What happens when a request body is empty?
+Explain the retry policy for failed dispatches
+Describe how the tool registry is built
+Walk me through the deeplink parsing flow
+What is the purpose of the normalisation step?
+Which module is responsible for sanitising user input?
+Show me the flow of a request end to end
+Why does the agent reset its cached target?
+How are unicode payloads folded before matching?
+Where do we handle a null payload?
+What code initialises the lookup table?
+Which files import the normalize helpers?
+Which files export a dispatch function?
+What depends on the tools registry?
+Which class extends the base agent?
+Show the call graph around the settings pane
+Where is the timeout constant defined?
+How is the maximum retry count enforced?
+What validates a scheme before routing?
+Which functions are called after preprocessing?
+How does the pipeline transform a payload?
+What is the responsible module for telemetry?
+Where are deeplinks serialised for logging?
+How do we process a truncated payload?
+Which file handles the wifi settings tool?
+What happens to whitespace in a raw payload?
+Explain how the cache is cleared
+Describe the circular import between the two helpers
+Which files are imported by the entry point?
+How is the payload limited to four kilobytes?
+What is the default timeout in milliseconds?
+Where is the settings scheme prefix checked?
+How does the agent decide it supports a link?
+Which functions invoke the invoke callback?
+What code builds a tool entry closure?
+Explain why the table is rebuilt lazily
+How are nested closures used to build a pipeline?
+What does the duplicated helper deduplicate?
+Which file contains only constants?
+Where does the broken file fail to parse?
+How is an empty file handled during indexing?
+What is the shape of a preprocessing result?
+Which functions return null on a bad input?
+How does the registry look a tool up by name?
+Where do we record a counter per request?
+What is the last target an agent routed to?
