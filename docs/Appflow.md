@@ -39,7 +39,7 @@ each arrow (`QueryPlan`, `ScoredChunk`, `FusedResult`, `RetrievalResult`, `Chunk
 | [4](#flow-4--degraded-query-with-the-llm-disabled) | Degraded query, `AXIOM_LLM_ENABLED=false` | `NFR-07` |
 | [5](#flow-5--incremental-reindex) | Incremental reindex | `NFR-02`, ≤ 45 s / 50 changed files |
 | [6](#flow-6--version-scoped-query) | Version-scoped query | `FR-20` |
-| [7](#flow-7--evolutionary-all-versions-query) | Evolutionary / all-versions query | `FR-21` |
+| [7](#flow-7--evolutionary--all-versions-query) | Evolutionary / all-versions query | `FR-21` |
 | [8](#flow-8--reranker-failure-cascade) | Reranker failure cascade | `NFR-07` |
 
 ---

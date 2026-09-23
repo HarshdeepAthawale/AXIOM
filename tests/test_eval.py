@@ -150,9 +150,7 @@ class TestPerQueryMetrics:
     """Every value below was computed on paper first (see ``metrics.py``'s header)."""
 
     def test_ndcg_matches_the_worked_example(self) -> None:
-        assert per_query_ndcg_at_k(QRELS["q1"], RUN["q1"], 3) == pytest.approx(
-            0.39748952, abs=1e-8
-        )
+        assert per_query_ndcg_at_k(QRELS["q1"], RUN["q1"], 3) == pytest.approx(0.39748952, abs=1e-8)
 
     def test_the_ideal_ranking_comes_from_the_qrels_not_from_the_run(self) -> None:
         """``d4`` is never retrieved, yet it must still raise the denominator."""
@@ -313,7 +311,7 @@ class TestBareInstallPosture:
     def test_a_missing_mteb_degrades_to_the_local_corpus_and_names_what_it_tried(
         self, monkeypatch: pytest.MonkeyPatch, settings: Any, tmp_path: Path
     ) -> None:
-        """"dataset not found" with no paths is the least actionable error a judge can hit."""
+        """ "dataset not found" with no paths is the least actionable error a judge can hit."""
         from axiom.core.errors import IndexNotFoundError
         from axiom.eval import mteb_adapter
 
@@ -373,15 +371,13 @@ class TestLocalTaskLoading:
         task = load_local_task(beir_dir, task_name="TinyCode", split="test")
         assert "query-id" not in task.qrels
 
-    def test_a_missing_file_is_an_environment_failure_not_bad_input(
-        self, beir_dir: Path
-    ) -> None:
+    def test_a_missing_file_is_an_environment_failure_not_bad_input(self, beir_dir: Path) -> None:
         """Exit 3 territory: the dataset is not there, so there is nothing to degrade to."""
         from axiom.core.errors import IndexNotFoundError
         from axiom.eval.mteb_adapter import load_local_task
 
         (beir_dir / "queries.jsonl").unlink()
-        with pytest.raises(IndexNotFoundError, match="queries.jsonl"):
+        with pytest.raises(IndexNotFoundError, match=r"queries\.jsonl"):
             load_local_task(beir_dir, task_name="TinyCode", split="test")
 
     def test_a_malformed_record_inside_a_present_file_is_skipped_loudly(
@@ -417,9 +413,7 @@ class TestLocalTaskLoading:
             "load_mteb_task",
             lambda *_a, **_kw: pytest.fail("a local copy existed; the hub must not be tried"),
         )
-        task = mteb_adapter.resolve_task(
-            "TinyCode", "test", local_path=beir_dir, settings=settings
-        )
+        task = mteb_adapter.resolve_task("TinyCode", "test", local_path=beir_dir, settings=settings)
         assert task.source.startswith("local:")
         assert set(task.corpus) == {"d1", "d2", "d3", "d4"}
 
@@ -445,9 +439,7 @@ class TestNormalisers:
         """``str(list)`` would embed Python quoting into the query text."""
         from axiom.eval.mteb_adapter import normalise_queries
 
-        assert normalise_queries({"q1": ["turn one", "turn two"]}) == {
-            "q1": "turn one\nturn two"
-        }
+        assert normalise_queries({"q1": ["turn one", "turn two"]}) == {"q1": "turn one\nturn two"}
         assert normalise_queries([{"_id": "q1", "text": "plain"}]) == {"q1": "plain"}
         assert normalise_queries({"q1": {"text": "nested"}}) == {"q1": "nested"}
 
@@ -485,23 +477,51 @@ class TestCorpusToChunks:
         chunks, id_map = corpus_to_chunks({"d1": {"title": "", "text": "   "}})
         assert chunks == [] and id_map == {}
 
-    def test_byte_identical_documents_collide_and_the_duplicate_is_named(self) -> None:
-        """A property of the corpus, not of our hashing -- and it must be said aloud."""
+    def test_byte_identical_documents_under_distinct_ids_both_survive(self) -> None:
+        """The synthetic path carries the document id, so the digests differ.
+
+        Worth pinning because the module's own comment describes the opposite
+        ("two corpus documents with byte-identical text ... collide on
+        chunk_id"). They collide only when their ids *also* sanitise to the same
+        synthetic filename -- the case the next test covers -- and every other
+        duplicate is retrievable under its own id, which is what the qrels need.
+        """
         from axiom.eval.mteb_adapter import corpus_to_chunks
 
         body = {"title": "", "text": "def same(): pass"}
         chunks, id_map = corpus_to_chunks({"d1": dict(body), "d2": dict(body)})
+        assert len(chunks) == 2
+        assert set(id_map.values()) == {"d1", "d2"}
+
+    def test_two_ids_that_sanitise_to_one_filename_drop_a_judged_document(self) -> None:
+        """``a/b`` and ``a_b`` both become ``corpus/a_b.py``.
+
+        With identical text that makes one ``chunk_id`` for two documents, and
+        the second is dropped. Rule 1 forbids inventing a new id, so dropping is
+        the right call -- but it silently makes the dropped document's qrels
+        unsatisfiable, so the warning is the only thing standing between this and
+        an unexplained recall ceiling. Asserted here so it cannot go quiet.
+        """
+        from axiom.eval.mteb_adapter import corpus_to_chunks
+
+        body = {"title": "", "text": "def same(): pass"}
+        chunks, id_map = corpus_to_chunks({"a/b": dict(body), "a_b": dict(body)})
         assert len(chunks) == 1
-        assert set(id_map.values()) == {"d1"}
+        assert len(id_map) == 1
+        assert set(id_map.values()) <= {"a/b", "a_b"}
 
     def test_a_document_id_with_path_characters_cannot_escape_the_synthetic_path(
         self,
     ) -> None:
+        from pathlib import PurePosixPath
+
         from axiom.eval.mteb_adapter import corpus_to_chunks
 
         chunks, _ = corpus_to_chunks({"../../etc/passwd": {"title": "", "text": "x = 1"}})
-        path = chunks[0].location.file_path
-        assert path.startswith("corpus/") and ".." not in path and path.count("/") == 1
+        path = PurePosixPath(chunks[0].location.file_path)
+        assert path.parts[0] == "corpus"
+        assert len(path.parts) == 2, "the id must not introduce a path separator"
+        assert ".." not in path.parts, "no component may traverse upwards"
 
     def test_the_title_is_joined_with_a_hard_break_not_a_space(self) -> None:
         """Otherwise a title fuses into the first line of code and makes a token
@@ -559,9 +579,7 @@ class TestLexicalFallback:
         backend.index(chunks)
         hits = backend.search("array", 3)
         assert len(hits) <= 3
-        assert [score for _, score in hits] == sorted(
-            (score for _, score in hits), reverse=True
-        )
+        assert [score for _, score in hits] == sorted((score for _, score in hits), reverse=True)
 
 
 class TestBackendResolution:
@@ -765,9 +783,7 @@ class TestSearchModelIdFence:
         assert run["q_blank"] == {}
         assert run["q_real"] == {"d1": 0.5}
 
-    def test_a_reranking_restriction_is_applied_rather_than_ignored(
-        self, settings: Any
-    ) -> None:
+    def test_a_reranking_restriction_is_applied_rather_than_ignored(self, settings: Any) -> None:
         from axiom.eval.mteb_adapter import AxiomSearchModel, CallableBackend, corpus_to_chunks
 
         corpus = {
@@ -795,7 +811,7 @@ class TestSearchModelIdFence:
         assert build_search_model(settings, backend_spec="lexical").degraded is True
 
     def test_the_backend_detail_names_the_embedder_underneath(self, settings: Any) -> None:
-        """"encoder-exact-cosine" alone cannot tell a Qwen3 run from a hash fallback."""
+        """ "encoder-exact-cosine" alone cannot tell a Qwen3 run from a hash fallback."""
         from axiom.eval.mteb_adapter import AxiomSearchModel, EncoderBackend
 
         class _Named:
@@ -806,9 +822,7 @@ class TestSearchModelIdFence:
             def encode(texts: list[str]) -> Any:  # pragma: no cover - never called
                 raise AssertionError
 
-        model = AxiomSearchModel(
-            backend=EncoderBackend(encoder=_Named()), settings=settings
-        )
+        model = AxiomSearchModel(backend=EncoderBackend(encoder=_Named()), settings=settings)
         assert model.backend_detail["encoder"] == "axiom/hash-embedder-v1"
         assert model.backend_detail["encoder_degraded"] is True
 
@@ -844,9 +858,7 @@ class TestAxiomEncoder:
         batched = encoder.encode([{"text": ["alpha", "beta"]}])
         assert numpy.allclose(plain, batched)
 
-    def test_an_injected_embedder_is_used_and_its_degradation_believed(
-        self, settings: Any
-    ) -> None:
+    def test_an_injected_embedder_is_used_and_its_degradation_believed(self, settings: Any) -> None:
         pytest.importorskip("numpy")
         from axiom.eval.mteb_adapter import AxiomEncoder
 
@@ -974,9 +986,7 @@ class TestTheHarnessRunsEndToEnd:
         assert provenance["reportable"] is False
         assert any("full test-split" in reason for reason in provenance["non_reportable_because"])
 
-    def test_a_non_test_split_can_never_be_reportable(
-        self, beir_dir: Path, tmp_path: Path
-    ) -> None:
+    def test_a_non_test_split_can_never_be_reportable(self, beir_dir: Path, tmp_path: Path) -> None:
         """NG-29's fence: only the untouched test split may produce a quoted number."""
         (beir_dir / "qrels" / "dev.tsv").write_text(
             "query-id\tcorpus-id\tscore\nq1\td1\t1\n", encoding="utf-8"

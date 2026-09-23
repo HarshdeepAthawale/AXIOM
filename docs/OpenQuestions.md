@@ -71,7 +71,7 @@ and a pointer to the `ADR-###` that closed it, because other documents cite `OQ-
 | ID | Question | Owner | Deadline | Status | Priority |
 |---|---|---|---|---|---|
 | [`OQ-01`](#oq-01--is-the-two-profile-eval--demo-split-the-final-shape) | Is the two-profile eval / demo split the final shape? | Harshdeep | — | **Closed** 2026-09-16 (ADR-001) | P0 |
-| [`OQ-02`](#oq-02--what-is-the-exact-sparse-weight-in-configseval-yaml) | What is the exact sparse weight in `configs/eval.yaml`? | Prabinder | 2026-09-26 (Day 4) | Open | P0 |
+| [`OQ-02`](#oq-02--what-is-the-exact-sparse-weight-in-configsevalyaml) | What is the exact sparse weight in `configs/eval.yaml`? | Prabinder | 2026-09-26 (Day 4) | Open | P0 |
 | [`OQ-03`](#oq-03--is-qwen3-embedding-06b-the-right-embedder-for-apps) | Is Qwen3-Embedding-0.6B the right embedder for APPS? | Prabinder | — | **Closed** 2026-09-23 — superseded by `OQ-14` and `OQ-16` | P0 |
 | [`OQ-04`](#oq-04--project-name-collision-with-a-rival-submission) | Project name collision with a rival submission | Harshdeep | — | **Closed** 2026-09-16 (ADR-015) | P0 |
 | [`OQ-05`](#oq-05--is-the-5000-row-train-split-usable-for-tuning-as-assumed) | Is the 5,000-row train split usable for tuning as assumed? | Parth | 2026-09-24 (Day 2) | Open | P0 |
@@ -408,7 +408,7 @@ the same day.
 **Question:** `FR-13` and `_CONTRACT.md §5` lock the refinement trigger at "top-1 rerank score < 0.35
 OR fewer than 3 results above 0.20." [Rules.md §8](Rules.md#8-the-placeholder-convention) uses this
 exact pair as its worked example of an unvalidated placeholder, and explicitly assigns it tracker id
-`T-141` — see [Tracker.md](Tracker.md#t-141) for the live task.
+`T-141` — see [Tracker.md](Tracker.md#24-agent-rerank-api-ui-t-091t-150) for the live task.
 
 **Why it matters:** This is the trigger that decides whether the agent loop — the requirement that
 is never cut, per [PRD.md §7.1](PRD.md#71-cut-order-under-time-pressure) — actually fires when it
@@ -465,7 +465,7 @@ Bonus feature is cut under [PRD.md §7.1](PRD.md#71-cut-order-under-time-pressur
 
 **Question:** `FR-24`'s API and `FR-25`'s Streamlit UI are dev-only and unauthenticated by design
 (`NG-08`, `NG-10`, `NG-13`). Is a fully local, evaluator-runs-it-themselves demo sufficient, or does
-the live jury session (per [PRD.md §9](PRD.md#9-jury-scoring-alignment) — actually §8) need a
+the live jury session (per [PRD.md §8](PRD.md#8-jury-scoring-alignment) — actually §8) need a
 presenter-hosted instance the jury can reach without cloning the repo?
 
 **Resolution:** **Closed 2026-09-16.** Fully local only. `NG-13` already forecloses hosted

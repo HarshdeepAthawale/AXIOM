@@ -31,7 +31,7 @@ Consumers of this schema:
 | API / UI | `src/axiom/api/`, `src/axiom/ui/` | reads `RetrievalResult` only | Harshdeep Athawale |
 
 Related documents: [TechSpecifications.md](TechSpecifications.md) (component behaviour),
-[Design.md](Design.md) (rationale), [APISpec.md](APISpec.md) (wire format),
+[Design.md](Design.md) (rationale), [API.md](API.md) (wire format),
 [Decisions.md](Decisions.md) (ADR log).
 
 ---
@@ -144,7 +144,7 @@ NDCG than a correct-but-flat weighting.
 | `STRUCTURAL` | `retrieval/structural.py` — SQL over `structural.sqlite` (call graph, import graph, symbol table, export map) | integer/graph-derived score, unbounded |
 
 The three score domains are mutually incomparable. That incomparability is exactly why fusion is
-rank-based (RRF) and not score-based; see [Design.md](Design.md#the-three-signal-rationale).
+rank-based (RRF) and not score-based; see [Design.md](Design.md#4-the-three-signal-rationale).
 
 ### 3.3 `ChunkKind` semantics
 
@@ -679,7 +679,7 @@ The only schema object that crosses the API and UI boundary. Everything else in 
 internal. `RetrievalResult` carries the whole `Chunk` (so the caller gets snippet text, file path,
 and line range in one payload), a single comparable `score`, and a human-readable `match_reason`.
 Keeping it separate from `FusedResult` means we can change the internals of fusion without breaking
-the public contract in [APISpec.md](APISpec.md).
+the public contract in [API.md](API.md).
 
 ```python
 class RetrievalResult(PrismModel):
@@ -828,7 +828,7 @@ class QueryPlan(PrismModel):
 The sum-to-one invariant holds *after* renormalisation for empty signals. If the structural
 retriever returns nothing, its weight is removed and the remaining weights are divided by their
 new sum — the plan that gets logged reflects the renormalised vector, not the nominal one. See
-[TechSpecifications.md](TechSpecifications.md#6-retrieval-spec).
+[TechSpecifications.md §5.1](TechSpecifications.md#51-reciprocal-rank-fusion).
 
 ### Example
 
@@ -1629,7 +1629,7 @@ live demo.
 |---|---|
 | [TechSpecifications.md](TechSpecifications.md) | How each module produces and consumes these models |
 | [Design.md](Design.md) | Why the model is shaped this way; fusion and degradation rationale |
-| [APISpec.md](APISpec.md) | Wire representation of `RetrievalResult` and `QueryPlan` |
+| [API.md](API.md) | Wire representation of `RetrievalResult` and `QueryPlan` |
 | [Decisions.md](Decisions.md) | ADR log; every schema change needs an entry |
 | [TestPlan.md](TestPlan.md) | `TC-###` cases covering the §15 invariants |
 | [OpenQuestions.md](OpenQuestions.md) | `OQ-##` items that may affect this schema |

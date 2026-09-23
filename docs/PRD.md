@@ -6,7 +6,7 @@ Defines what Axiom must do, for whom, and how success is measured for the Samsun
 **Last updated:** 2026-09-23
 **Status:** Draft
 
-Related: [TechSpecifications.md](TechSpecifications.md) · [Design.md](Design.md) · [Schema.md](Schema.md) · [NonGoals.md](NonGoals.md) · [OpenQuestions.md](OpenQuestions.md) · [Decisions.md](Decisions.md) · [TestPlan.md](TestPlan.md) · [ImplementationPlan.md](ImplementationPlan.md) · [Tracker.md](Tracker.md) · [API.md](API.md) · [README.md](README.md)
+Related: [TechSpecifications.md](TechSpecifications.md) · [Design.md](Design.md) · [Schema.md](Schema.md) · [NonGoals.md](NonGoals.md) · [OpenQuestions.md](OpenQuestions.md) · [Decisions.md](Decisions.md) · [TestPlan.md](TestPlan.md) · [ImplementationPlan.md](ImplementationPlan.md) · [Tracker.md](Tracker.md) · [API.md](API.md) · [README.md](../README.md)
 
 ---
 
@@ -47,7 +47,7 @@ from the problem statement:
 | Q3 | "Where is the Bluetooth-settings deeplink used?" | Usage / lexical | The literal string `bluetooth-settings` is the highest-precision signal that exists. Dense retrieval dilutes it by returning every Bluetooth-adjacent function. BM25 nails it. |
 
 Q1, Q2, and Q3 map directly onto `QueryType.SEMANTIC`, `QueryType.STRUCTURAL`, and
-`QueryType.USAGE` in [Schema.md](Schema.md#querytype), and onto the three default
+`QueryType.USAGE` in [Schema.md](Schema.md#31-querytype-semantics), and onto the three default
 `strategy_weights` vectors locked in the contract.
 
 ---
@@ -182,7 +182,7 @@ programming problem and the documents are Python solutions, so there is very lit
 vocabulary for a lexical signal to match on, and a weak list fused at equal weight spends the
 reranker's candidate slots on noise. But the **magnitude** of the down-weighting is no longer
 supported by anything, so `0.15` remains what it always was — a `# PLACEHOLDER` awaiting the sweep in
-[`OQ-02`](OpenQuestions.md#oq-02--what-is-the-exact-sparse-weight-in-configseval-yaml) (`T-112`),
+[`OQ-02`](OpenQuestions.md#oq-02--what-is-the-exact-sparse-weight-in-configsevalyaml) (`T-112`),
 and the sweep's range must include `0.0`.
 
 The related claim that "being a code model is not sufficient; NL-to-code alignment is what matters"
@@ -562,7 +562,7 @@ their P0 number could land earlier and more safely once they turn their flags on
 mitigation is sequencing — the dense-only baseline `B` runs **first**, before sparse,
 structural, rerank, the agent loop, the UI and the API, so a submittable number exists on
 Day 1 and everything after it is upside rather than prerequisite. See the risk register at
-[ImplementationPlan.md#risk-register](ImplementationPlan.md#risk-register) and the day plan
+[ImplementationPlan.md §5](ImplementationPlan.md#5-risk-register) and the day plan
 in [ImplementationPlan.md](ImplementationPlan.md).
 
 **Name collision.** They ship under the identical project name and the identical release

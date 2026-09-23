@@ -24,7 +24,7 @@ Three further structural gaps were closed:
 1. **This document contained zero `FR-`/`NFR-` references.** A requirement with no test case is not
    real, and there was no way to check that claim. §2.2 is now a requirement → coverage matrix.
 2. **`FR-10` — the structural signal, the requirement
-   [PRD.md §8](PRD.md#8-how-this-maps-to-the-jury-scoring-rubric) credits with the Innovation
+   [PRD.md §8](PRD.md#8-jury-scoring-alignment) credits with the Innovation
    score — had no test case at all.** Category L (`TC-091`–`TC-098`) covers its five query forms,
    the K clamp, the empty-list contract and the degradation ladder.
 3. **`FR-22` — the shape of `appsretrieval_results.json`, the single artifact attached to the
@@ -413,7 +413,7 @@ No test module exists for `rerank/cross_encoder.py`. Every row below is unimplem
 ### 3.12 Category L — Structural retrieval, `FR-10` (TC-091 .. TC-098)
 
 **New on 2026-09-23.** `FR-10` is P0 and is the requirement
-[PRD.md §8](PRD.md#8-how-this-maps-to-the-jury-scoring-rubric) credits with the Innovation score. It
+[PRD.md §8](PRD.md#8-jury-scoring-alignment) credits with the Innovation score. It
 previously had no category and no case. The implementation is `retrieval/structural.py`; the tests
 below already exist in `tests/test_structural.py` (39 tests) and are now given ids so the matrix can
 cite them.

@@ -1,0 +1,1016 @@
+{
+ "A dense-only  HASH": {
+  "ndcg10": 0.5795217510173443,
+  "mrr10": 0.5376984126984127,
+  "recall10": 0.7625,
+  "hit1": 0.4,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.44149241373678083,
+    "mrr10": 0.5,
+    "recall10": 0.5,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:8",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 0.3010299956639812,
+    "mrr10": 0.1111111111111111,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ07": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 0.6934264036172708,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/circular/b.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ11": {
+    "ndcg10": 0.3333333333333333,
+    "mrr10": 0.14285714285714285,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ13": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/circular/b.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.7030861797445797,
+    "mrr10": 1.0,
+    "recall10": 0.75,
+    "top1": "src/circular/b.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ18": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:33",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:31",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   }
+  },
+  "elapsed": 7.517312049865723
+ },
+ "B dense-only  MiniLM": {
+  "ndcg10": 0.8004900498452997,
+  "mrr10": 0.7876984126984127,
+  "recall10": 0.925,
+  "hit1": 0.7,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.35914753008966527,
+    "mrr10": 0.5,
+    "recall10": 0.5,
+    "top1": "src/tools/registry.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:8",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 0.8772153153380493,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:12",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:24",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ07": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 0.8772153153380493,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:44",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ11": {
+    "ndcg10": 0.3010299956639812,
+    "mrr10": 0.1111111111111111,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:44",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ13": {
+    "ndcg10": 0.3333333333333333,
+    "mrr10": 0.14285714285714285,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/dup/copy_a.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/tools/registry.js:48",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ18": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:33",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:33",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   }
+  },
+  "elapsed": 11.046056985855103
+ },
+ "C sparse-only (bm25s)": {
+  "ndcg10": 0.746211672901924,
+  "mrr10": 0.6933333333333334,
+  "recall10": 0.925,
+  "hit1": 0.55,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.7486761295186739,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:8",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 0.6934264036172708,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:24",
+    "hit1": true,
+    "n": 8
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 4
+   },
+   "HQ07": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 3
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 0.38685280723454163,
+    "mrr10": 0.2,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 7
+   },
+   "HQ11": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 1
+   },
+   "HQ13": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 0.6934264036172708,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.5585075862632192,
+    "mrr10": 1.0,
+    "recall10": 0.5,
+    "top1": "src/circular/b.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 8
+   },
+   "HQ18": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:33",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/main.js:7",
+    "hit1": true,
+    "n": 7
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 1
+   }
+  },
+  "elapsed": 9.818270921707153
+ },
+ "D fused demo  HASH": {
+  "ndcg10": 0.6224332767954921,
+  "mrr10": 0.5593650793650793,
+  "recall10": 0.9,
+  "hit1": 0.4,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.44149241373678083,
+    "mrr10": 0.5,
+    "recall10": 0.5,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 0.9197207891481876,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 0.3333333333333333,
+    "mrr10": 0.14285714285714285,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:33",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ07": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 0.43067655807339306,
+    "mrr10": 0.25,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ11": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.0,
+    "mrr10": 0.0,
+    "recall10": 0.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ13": {
+    "ndcg10": 0.2890648263178879,
+    "mrr10": 0.1,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 0.36181498356361597,
+    "mrr10": 0.1111111111111111,
+    "recall10": 1.0,
+    "top1": "src/circular/b.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.6366824387328317,
+    "mrr10": 1.0,
+    "recall10": 0.5,
+    "top1": "src/circular/b.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ18": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:33",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 0.43067655807339306,
+    "mrr10": 0.25,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:31",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   }
+  },
+  "elapsed": 10.605573892593384
+ },
+ "E fused demo  MiniLM": {
+  "ndcg10": 0.8267008929438344,
+  "mrr10": 0.8016666666666665,
+  "recall10": 0.9625,
+  "hit1": 0.7,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.6525874238732422,
+    "mrr10": 1.0,
+    "recall10": 0.75,
+    "top1": "src/main.js:7",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 0.6934264036172708,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:12",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:24",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ07": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 0.9197207891481876,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:44",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ11": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ13": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/dup/copy_a.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.2811463015585058,
+    "mrr10": 0.2,
+    "recall10": 0.5,
+    "top1": "src/deep/nested.js:5",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ18": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:33",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/main.js:7",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   }
+  },
+  "elapsed": 12.997284889221191
+ },
+ "F fused+agent MiniLM": {
+  "ndcg10": 0.8267008929438344,
+  "mrr10": 0.8016666666666665,
+  "recall10": 0.9625,
+  "hit1": 0.7,
+  "per": {
+   "HQ01": {
+    "ndcg10": 0.6525874238732422,
+    "mrr10": 1.0,
+    "recall10": 0.75,
+    "top1": "src/main.js:7",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ02": {
+    "ndcg10": 0.6309297535714575,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/broken/syntax_error.js:1",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ03": {
+    "ndcg10": 0.6934264036172708,
+    "mrr10": 0.5,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ04": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:12",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ05": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:24",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ06": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ07": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ08": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:20",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ09": {
+    "ndcg10": 0.9197207891481876,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:28",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ10": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/tools/registry.js:44",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ11": {
+    "ndcg10": 0.3562071871080222,
+    "mrr10": 0.16666666666666666,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ12": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ13": {
+    "ndcg10": 0.5,
+    "mrr10": 0.3333333333333333,
+    "recall10": 1.0,
+    "top1": "src/agents/bluetooth.js:8",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ14": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/dup/copy_a.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ15": {
+    "ndcg10": 0.2811463015585058,
+    "mrr10": 0.2,
+    "recall10": 0.5,
+    "top1": "src/deep/nested.js:5",
+    "hit1": false,
+    "n": 10
+   },
+   "HQ16": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/deep/nested.js:6",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ17": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/i18n/labels.js:5",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ18": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/utils/normalize.js:33",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ19": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/main.js:7",
+    "hit1": true,
+    "n": 10
+   },
+   "HQ20": {
+    "ndcg10": 1.0,
+    "mrr10": 1.0,
+    "recall10": 1.0,
+    "top1": "src/constants.js:1",
+    "hit1": true,
+    "n": 10
+   }
+  },
+  "elapsed": 15.066615104675293
+ }
+}

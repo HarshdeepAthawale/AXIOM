@@ -25,7 +25,7 @@ guess awaiting a measurement, carrying an owning `OQ-##`/`T-###` pair per the co
 defect. **As of this revision there are no measured latency, throughput or memory figures anywhere
 in the project** — §8 is entirely estimate and placeholder, and says so in its own heading.
 
-Per [README.md](README.md#where-things-live--canonical-ownership): this document owns algorithm
+Per [README.md](../README.md#where-things-live--canonical-ownership): this document owns algorithm
 constants (RRF `k`, candidate widths, weights, thresholds). [Setup.md](Setup.md) owns environment
 variables and installation; §6 below only summarises the config surface and links back to
 [Setup.md §7](Setup.md#7-environment-variables) as the authority on how to set each one.
@@ -626,7 +626,7 @@ Example: `SEMANTIC` weights with structural empty become
 structural build step is skipped, since APPS documents have no cross-file structure to index,
 [PRD.md §2.2](PRD.md#22-two-evaluation-contexts-two-profiles)). Effective weights:
 `{dense 0.85, sparse 0.15, struct 0.0}`. The `0.15` sparse weight is a `PLACEHOLDER` — see
-[`OQ-02`](OpenQuestions.md#oq-02--what-is-the-exact-sparse-weight-in-configseval-yaml), swept by
+[`OQ-02`](OpenQuestions.md#oq-02--what-is-the-exact-sparse-weight-in-configsevalyaml), swept by
 `T-112`.
 
 #### 5.1.4 Sub-query fan-out and its fusion arithmetic
@@ -769,7 +769,7 @@ than 3 results score above `0.20`. Both thresholds are `PLACEHOLDER` — this is
 example in [Rules.md §8](Rules.md#8-the-placeholder-convention) and
 [Rules.md AP-14](Rules.md#ap-14--reporting-a-number-built-on-a-placeholder-8). Tracked as
 [`OQ-10`](OpenQuestions.md#oq-10--are-the-agent-sufficiency-thresholds-035020-right), swept by
-`T-141` ([Tracker.md](Tracker.md#t-141)). The evaluator's fallback rung (§3.3.4, §3.7) — RRF-score
+`T-141` ([Tracker.md](Tracker.md#24-agent-rerank-api-ui-t-091t-150)). The evaluator's fallback rung (§3.3.4, §3.7) — RRF-score
 predicate instead of rerank-score predicate — applies the *same* two thresholds against `rrf_score`
 rather than `rerank_score` when reranking has degraded to passthrough; the thresholds are shared,
 only the score field changes.

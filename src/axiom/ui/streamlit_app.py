@@ -133,6 +133,20 @@ NO_INDEX_HINT = (
     "No index found. Build one first:\n\n```bash\naxiom index /path/to/repo --version-id v1\n```"
 )
 
+#: Remediation shown when the *API* is the thing that did not answer.
+#:
+#: A separate string because the two failures look identical from here and their
+#: fixes are opposite. ``HttpBackend`` maps a refused connection onto
+#: ``INDEX_UNAVAILABLE`` -- correct as a status code, since the UI genuinely has
+#: no index to search -- but printing "run ``axiom index``" at someone whose
+#: index is fine and whose server is simply not running sends them to rebuild a
+#: corpus they already have. The backend kind is what distinguishes the two, so
+#: that is what :func:`main` branches on.
+NO_API_HINT = (
+    "The API did not answer. Start it, or switch **Retrieval path** to "
+    "`local` in the sidebar to query in this process:\n\n```bash\naxiom serve\n```"
+)
+
 
 # ---------------------------------------------------------------------------
 # Backends
@@ -534,6 +548,19 @@ def signal_breakdown_html(result: RetrievalResult, plan: QueryPlan, rrf_k: int) 
 # ---------------------------------------------------------------------------
 
 
+def _remediation_for(choice: BackendChoice) -> str:
+    """Which empty-state remediation actually fixes *this* failure.
+
+    ``HttpBackend`` reports a refused connection as ``INDEX_UNAVAILABLE``, the
+    same code the local backend raises when nothing has been indexed. The status
+    code is right -- there is no index to search either way -- but the fix is
+    not: one person needs to build a corpus and the other needs to start a
+    server they already built a corpus for. Telling the second person to reindex
+    is how a demo loses five minutes to a problem it does not have.
+    """
+    return NO_API_HINT if choice.kind == BACKEND_HTTP else NO_INDEX_HINT
+
+
 def _render_sidebar(st: Any, settings: Settings) -> dict[str, Any]:
     """Draw the controls and return the resolved query options."""
     st.sidebar.markdown("### Axiom")
@@ -816,7 +843,7 @@ def main() -> None:
 
     if options["index_error"]:
         st.warning(options["index_error"])
-        st.markdown(NO_INDEX_HINT)
+        st.markdown(_remediation_for(options["choice"]))
         return
 
     if submitted:
@@ -839,7 +866,7 @@ def main() -> None:
                 st.session_state.pop("response", None)
                 st.error(f"**{exc.code.value}** &mdash; {exc.detail}")
                 if exc.code is ErrorCode.INDEX_UNAVAILABLE:
-                    st.markdown(NO_INDEX_HINT)
+                    st.markdown(_remediation_for(options["choice"]))
             except Exception as exc:  # pragma: no cover - last-resort guard
                 st.session_state.pop("response", None)
                 _LOG.error("ui query failed: %s", exc, exc_info=True)
@@ -894,6 +921,8 @@ __all__ = [
     "BACKEND_AUTO",
     "BACKEND_HTTP",
     "BACKEND_LOCAL",
+    "NO_API_HINT",
+    "NO_INDEX_HINT",
     "BackendChoice",
     "HttpBackend",
     "LocalBackend",

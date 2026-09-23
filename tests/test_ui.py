@@ -327,6 +327,28 @@ class TestBackendSelection:
         assert isinstance(backend, ui_app.HttpBackend)
         assert choice.base_url == "http://127.0.0.1:8000"
 
+    def test_the_empty_state_remediation_matches_the_failure_that_produced_it(self) -> None:
+        """A refused connection and an unbuilt index share one error code.
+
+        ``HttpBackend`` maps "connection refused" onto ``INDEX_UNAVAILABLE``,
+        which is the right status and the wrong advice: printing "run
+        ``axiom index``" at someone whose index is fine and whose server is not
+        running sends them to rebuild a corpus they already have.
+        """
+        from axiom.ui.streamlit_app import (
+            NO_API_HINT,
+            NO_INDEX_HINT,
+            BackendChoice,
+            _remediation_for,
+        )
+
+        http = BackendChoice("http", "HTTP API at http://127.0.0.1:8000")
+        local = BackendChoice("local", "in-process pipeline")
+        assert _remediation_for(http) == NO_API_HINT
+        assert "axiom serve" in NO_API_HINT
+        assert _remediation_for(local) == NO_INDEX_HINT
+        assert "axiom index" in NO_INDEX_HINT
+
     def test_a_refused_probe_is_false_and_never_an_exception(self) -> None:
         from axiom.ui.streamlit_app import api_is_up
 

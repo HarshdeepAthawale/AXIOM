@@ -29,8 +29,11 @@ bounded agentic loop that classifies, plans, evaluates and rewrites. CPU-only.
 |---|---|
 | Event | Samsung PRISM GenAI Hackathon 3rd Edition (2026-27), Theme 01 |
 | Team | Incognito |
-| Build window | 2026-09-23 → 2026-09-27 (Day 1 = 2026-09-23) |
+| Build window | 2026-09-11 → 2026-09-27 (Day 10 = 2026-09-24) |
 | Release tag | `PRISM_GENAI_HACKATHON_Y2026` |
+
+**Start here:** [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) — the problem, the architecture, the
+component walkthrough, the measured results and the jury-scoring breakdown, in one document.
 
 ---
 

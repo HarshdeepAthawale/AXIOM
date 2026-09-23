@@ -6,7 +6,7 @@ Domain terms, acronyms, metric formulas, and project-specific jargon used across
 **Last updated:** 2026-09-23
 **Status:** Active
 
-Related: [Rules.md](Rules.md) · [Schema.md](Schema.md) · [_CONTRACT.md](_CONTRACT.md) · [PRD.md](PRD.md) · [TechSpecifications.md](TechSpecifications.md) · [README.md](README.md)
+Related: [Rules.md](Rules.md) · [Schema.md](Schema.md) · [_CONTRACT.md](_CONTRACT.md) · [PRD.md](PRD.md) · [TechSpecifications.md](TechSpecifications.md) · [README.md](../README.md)
 
 ---
 
@@ -30,7 +30,7 @@ time.
 sparse (BM25 lexical), or structural (AST/call-graph traversal). Each signal takes a query and
 returns a ranked `list[ScoredChunk]` in its own, mutually incomparable score domain. See
 [Schema.md §3.2](Schema.md#32-signalkind-semantics) for the `SignalKind` enum and
-[Design.md §3](Design.md#the-three-signal-rationale) for why three signals rather than one or two.
+[Design.md §4](Design.md#4-the-three-signal-rationale) for why three signals rather than one or two.
 
 **Stage** — Any pure callable in the pipeline that takes typed input and produces typed output:
 chunker, embedder, dense retriever, sparse retriever, structural retriever, fusion, reranker, agent
@@ -42,13 +42,13 @@ per-stage.
 **Candidate width** — The number of results a signal (or a fusion/rerank step) is asked to return
 before the next stage narrows the list further. The locked widths: dense `K=100`, sparse `K=100`,
 structural `K=50` → fused to `N=25` → reranked to top `10`. Locked in `_CONTRACT.md §5`, elaborated
-in [TechSpecifications.md §5](TechSpecifications.md#5-retrieval-spec).
+in [TechSpecifications.md §5](TechSpecifications.md#5-algorithm-specifications).
 
 **Degradation ladder** — The ordered list of fallbacks a stage falls through when its primary path
 fails, ending in a defined, typed, empty-but-valid result rather than an exception. The full
 stage-by-stage table is [Rules.md §3](Rules.md#rule-3--never-raise-on-bad-input-degrade); the
 architectural rationale for why this is a first-class return path rather than an error path is
-[Design.md §5](Design.md#5-degradation-ladder-architecture-view).
+[Design.md §6](Design.md#6-the-degradation-ladder-as-a-structural-concept).
 
 **Sufficiency predicate** — The rule the agent loop uses to decide whether a pass's results are good
 enough to return, or whether to refine and retry: top-1 rerank score `< 0.35` **or** fewer than 3
@@ -221,7 +221,7 @@ structural) for every chunk in a corpus from nothing, budgeted at ≤ 12 minutes
 (`NFR-01`). An incremental reindex re-chunks and re-embeds only files a `git diff` reports as added
 or modified, drops chunks from deleted files, and reuses blobs by `content_hash` for everything
 else, budgeted at ≤ 45 seconds for a 50-file diff (`NFR-02`). See
-[TechSpecifications.md §7](TechSpecifications.md#7-versioning-spec).
+[TechSpecifications.md §5.5](TechSpecifications.md#55-incremental-reindex).
 
 ---
 
@@ -350,7 +350,7 @@ be quoted — see [TestPlan.md §6.2](TestPlan.md#62-why-a-limited-run-is-never-
 ### Identifier prefix scheme
 
 The doc suite's own convention, first stated in `_CONTRACT.md §9` and
-[README.md](README.md#conventions):
+[README.md](../README.md#conventions):
 
 | Prefix | Meaning | Minted in |
 |---|---|---|
