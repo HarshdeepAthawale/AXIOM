@@ -2,7 +2,7 @@
   "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
   "task_name": "AppsRetrieval",
   "mteb_version": "2.21.6",
-  "evaluation_time": 167.926,
+  "evaluation_time": 170.384,
   "kg_co2_emissions": null,
   "scores": {
     "test": [
@@ -74,7 +74,9 @@
     "backend": "hybrid-rrf",
     "backend_detail": {
       "name": "hybrid-rrf",
-      "degraded": false
+      "degraded": false,
+      "encoder": "sentence-transformers/all-MiniLM-L6-v2",
+      "encoder_degraded": false
     },
     "dataset_source": "mteb:2.21.6",
     "limit": null,
@@ -93,34 +95,34 @@
       "recall_at_100": 27.1713,
       "map_at_10": 6.5988
     },
-    "git_sha": "76aa89e",
-    "generated_at": "2026-09-23T09:35:16.084274Z",
+    "git_sha": "8d22680",
+    "generated_at": "2026-09-23T09:39:36.853944Z",
     "command": "run_eval.py --task AppsRetrieval --split test --backend scripts.eval_backends:hybrid --profile eval --out appsretrieval_results.json",
     "python": "3.11.14",
     "timings": {
-      "total_ms": 167776.147,
+      "total_ms": 170238.832,
       "stages": [
         {
           "stage": "dataset",
-          "elapsed_ms": 15616.08,
+          "elapsed_ms": 15345.617,
           "documents": 8765,
           "queries": 3765,
           "source": "mteb:2.21.6"
         },
         {
           "stage": "index",
-          "elapsed_ms": 1792.01,
+          "elapsed_ms": 1643.779,
           "chunks": 8765
         },
         {
           "stage": "search",
-          "elapsed_ms": 148835.158,
+          "elapsed_ms": 151690.658,
           "queries": 3765,
           "top_k": 100
         },
         {
           "stage": "score",
-          "elapsed_ms": 1532.899,
+          "elapsed_ms": 1558.778,
           "qrels_queries": 3765,
           "queries_with_positives": 3765,
           "answered_queries": 3765,
