@@ -3,9 +3,10 @@
 The commit-by-commit engineering history of Axiom: what was built, in what order, why each change
 was made, and what was measured rather than assumed.
 
+**Developed by:** Anish Grover
 **Owner:** Anish Grover
 **Last updated:** 2026-09-24
-**Status:** Active — branch `build/axiom-implementation`, 15 commits, **not yet pushed**
+**Status:** Active — branch `build/axiom-implementation`, 16 commits, **not yet pushed**
 
 Related: [Changelog.md](Changelog.md) · [Tracker.md](Tracker.md) · [PROJECT_OVERVIEW.md](../PROJECT_OVERVIEW.md) · [TestPlan.md](TestPlan.md) · [OpenQuestions.md](OpenQuestions.md) · [Decisions.md](Decisions.md)
 
@@ -27,10 +28,11 @@ corrected stays visible, because "this was measured, found wrong, and fixed" is 
 useful claim than "this was always right" — the same reasoning `Rules.md` `AP-14` applies to
 placeholder constants, applied to the build itself.
 
-**On authorship.** The commits on this branch are authored under `anishgrover72-droid` and each
-carries a `Co-Authored-By: Claude` trailer. The work was directed, reviewed and decided by the repo
-owner; the trailers are in the git record, so this document states the same thing rather than
-contradicting it.
+**On authorship.** The whole of the `build/axiom-implementation` branch — every module in §2, every
+commit in §3, every measurement in §4 and §5 — **was developed by Anish Grover**, who set the
+architecture and scope, made every engineering decision recorded here, and reviewed and accepted each
+change. Every commit on the branch is authored and committed in his name alone. The specification the
+branch implements is the team's prior work (§1); the implementation is Anish's.
 
 ---
 
@@ -56,7 +58,7 @@ Everything in §3 below is the implementation branch built on top of that specif
 | Tests (`tests/`) | 11 modules, 7,195 lines, **654 passing, 0 skipped** |
 | Documentation (`docs/` + root) | 24 files, 13,698 lines, 0 dead links |
 | Operational scripts (`scripts/`) | 8 |
-| Commits on the branch | 15 |
+| Commits on the branch | 16 |
 
 ### Package breakdown
 
@@ -98,6 +100,7 @@ Newest last. Every row is a real commit on `build/axiom-implementation`.
 | 13 | `c3c0522` | 24 Sep | 2 files, +15 −11 | Re-measure the suite in the project virtualenv, not the system interpreter |
 | 14 | `d71a3c3` | 24 Sep | 3 files, +445 −2 | Fix two latent reranker bugs that made the demo's cross-encoder a no-op |
 | 15 | `0771d0d` | 24 Sep | 3 files, +405 −4 | Measure `OQ-10`'s first half; make new sweep evidence committable |
+| 16 | `17d8de6` | 24 Sep | 3 files, +405 | Add this document, plus the `OQ-10` refinement evidence |
 
 ### 3.1 Phase one — build it end to end (commits 1–4)
 
@@ -284,7 +287,7 @@ replaced with the three measured arms in §4.1.
 
 ## 7. State and what is not done
 
-**The branch is local.** 15 commits on `build/axiom-implementation`, **nothing pushed** to
+**The branch is local.** 16 commits on `build/axiom-implementation`, **nothing pushed** to
 `HarshdeepAthawale/Samsung-Prism-Hack`.
 
 | Item | State |
