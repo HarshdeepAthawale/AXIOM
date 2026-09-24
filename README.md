@@ -92,6 +92,7 @@ New to the project? Follow this path.
 |---|---|---|
 | [Decisions.md](docs/Decisions.md) | `ADR-###` log: what was chosen, why, alternatives rejected | Prabinder |
 | [Changelog.md](docs/Changelog.md) | What shipped and when; breaking vs non-breaking; planned releases | Parth |
+| [BuildLog.md](docs/BuildLog.md) | Commit-by-commit engineering history: what was built, what measuring it revealed, and the corrections kept on the record | Anish |
 
 ### Setup and ops
 
@@ -143,6 +144,7 @@ Each fact has exactly one home. Link to it; never restate it.
 | Risk register `RISK-01`–`RISK-12` | [ImplementationPlan.md](docs/ImplementationPlan.md#5-risk-register) |
 | Day plan and `M0`–`M7` milestone gates | [ImplementationPlan.md](docs/ImplementationPlan.md) |
 | Task board `T-###`, burndown, eval run log | [Tracker.md](docs/Tracker.md) |
+| What was actually built, commit by commit | [BuildLog.md](docs/BuildLog.md) |
 | Decisions and rejected alternatives | [Decisions.md](docs/Decisions.md) |
 | Latency and index-build budgets | [TechSpecifications.md](docs/TechSpecifications.md), flows in [Appflow.md](docs/Appflow.md) |
 | Locked facts: name, model stack, package layout, data model, budgets, targets | [_CONTRACT.md](docs/_CONTRACT.md) |
