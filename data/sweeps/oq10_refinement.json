@@ -1,0 +1,96 @@
+{
+  "question": "OQ-10 (refinement benefit)",
+  "task": "AppsRetrieval",
+  "split": "train",
+  "profile": "demo",
+  "queries_pass1": 600,
+  "queries_refinable": 592,
+  "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "mean_delta_over_refinable": -0.0369,
+  "helped": 25,
+  "hurt": 26,
+  "threshold_candidates": [
+    {
+      "agent_sufficiency_top1": 0.0005,
+      "refined": 65,
+      "refine_rate": 0.1083,
+      "mean_delta": -0.4806,
+      "helped": 3,
+      "hurt": 2,
+      "corpus_delta": -0.0521
+    },
+    {
+      "agent_sufficiency_top1": 0.001,
+      "refined": 95,
+      "refine_rate": 0.1583,
+      "mean_delta": -0.6293,
+      "helped": 5,
+      "hurt": 5,
+      "corpus_delta": -0.0996
+    },
+    {
+      "agent_sufficiency_top1": 0.005,
+      "refined": 191,
+      "refine_rate": 0.3183,
+      "mean_delta": -0.0763,
+      "helped": 11,
+      "hurt": 11,
+      "corpus_delta": -0.0243
+    },
+    {
+      "agent_sufficiency_top1": 0.01,
+      "refined": 246,
+      "refine_rate": 0.41,
+      "mean_delta": 0.0885,
+      "helped": 12,
+      "hurt": 12,
+      "corpus_delta": 0.0363
+    },
+    {
+      "agent_sufficiency_top1": 0.05,
+      "refined": 385,
+      "refine_rate": 0.6417,
+      "mean_delta": 0.0154,
+      "helped": 15,
+      "hurt": 19,
+      "corpus_delta": 0.0099
+    },
+    {
+      "agent_sufficiency_top1": 0.1,
+      "refined": 445,
+      "refine_rate": 0.7417,
+      "mean_delta": 0.0073,
+      "helped": 16,
+      "hurt": 20,
+      "corpus_delta": 0.0054
+    },
+    {
+      "agent_sufficiency_top1": 0.2,
+      "refined": 505,
+      "refine_rate": 0.8417,
+      "mean_delta": -0.0224,
+      "helped": 18,
+      "hurt": 21,
+      "corpus_delta": -0.0189
+    },
+    {
+      "agent_sufficiency_top1": 0.35,
+      "refined": 544,
+      "refine_rate": 0.9067,
+      "mean_delta": -0.0455,
+      "helped": 21,
+      "hurt": 23,
+      "corpus_delta": -0.0413
+    },
+    {
+      "agent_sufficiency_top1": 0.5,
+      "refined": 564,
+      "refine_rate": 0.94,
+      "mean_delta": -0.0316,
+      "helped": 24,
+      "hurt": 24,
+      "corpus_delta": -0.0297
+    }
+  ],
+  "note": "Measured on the TRAIN split only; the test split was not consulted (NG-29)."
+}

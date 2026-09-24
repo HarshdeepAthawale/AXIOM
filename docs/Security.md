@@ -1,10 +1,10 @@
 # Security
 
-Threat model, trust boundaries, data handling, and dependency security for PRISM.
+Threat model, trust boundaries, data handling, and dependency security for Axiom.
 
 **Owner:** Harshdeep Athawale
-**Last updated:** 2026-09-16
-**Status:** Draft
+**Last updated:** 2026-09-23
+**Status:** Active
 
 Related: [NonGoals.md](NonGoals.md) · [Rules.md](Rules.md) · [Schema.md](Schema.md) · [TestPlan.md](TestPlan.md) · [Deployment.md](Deployment.md) · [_CONTRACT.md](_CONTRACT.md) · [API.md](API.md)
 
@@ -43,7 +43,7 @@ Hub downloads).
 | Applies? | Detail |
 |---|---|
 | To the API/UI | **No.** There is no identity to spoof — no accounts, no sessions, no auth tokens ([`NG-08`](NonGoals.md#ng-08--no-authentication-authorisation-or-multi-tenancy), [`NG-09`](NonGoals.md#ng-09--no-persistent-user-accounts-history-or-personalisation)). Anyone who can reach the loopback-bound port *is* the operator, by construction — there is no second identity to impersonate. |
-| To the model supply chain | **Partially.** A malicious actor controlling DNS or a MITM position between the operator and `huggingface.co` could theoretically serve a spoofed model artefact. Mitigated by HF Hub's own TLS and content-addressed blob storage (the hub keys model files by content hash internally), and by pinning model revisions rather than `main`/`latest` (§4). We do not add our own signature verification layer — out of scope for a 10-day project, and redundant with the hub's own integrity guarantees for this threat's realistic likelihood. |
+| To the model supply chain | **Partially.** A malicious actor controlling DNS or a MITM position between the operator and `huggingface.co` could theoretically serve a spoofed model artefact. Mitigated by HF Hub's own TLS and content-addressed blob storage (the hub keys model files by content hash internally), and by pinning model revisions rather than `main`/`latest` (§5.2 — a control that is **stated but not yet implemented**; see the gap note there). We do not add our own signature verification layer — out of scope for a hackathon-scale project, and redundant with the hub's own integrity guarantees for this threat's realistic likelihood. |
 | To version identity | **No.** `version_id`/`commit_sha` are read from `git`, a locally-trusted source in this threat model — we do not defend against a compromised local git installation. |
 
 ### 2.2 Tampering
@@ -69,7 +69,7 @@ Axiom **persists about the corpus it was pointed at.** See §3.
 |---|---|
 | Indexed source code, verbatim, in `.axiom/` | **Yes — this is the primary information-disclosure surface.** Treated at length in §3. |
 | Model weights, HF cache | **No new disclosure** — these are public model repositories, not secrets. |
-| Error messages | **Bounded.** [Rules.md §9.2](Rules.md#92-error-taxonomy) requires exception messages to name "the offending value and the config field that controls it" — deliberately informative for debugging, which means an error response can echo back a malformed query or a bad config value. It never echoes chunk content or file-system paths outside the configured index root, and `TC-071` ([TestPlan.md](TestPlan.md#38-category-h--end-to-end-pipeline-cli-api-ui-tc-065--tc-072)) explicitly asserts the API "no stack trace in the body" for malformed/hostile input. |
+| Error messages | **Bounded.** [Rules.md §9.2](Rules.md#92-error-taxonomy) requires exception messages to name "the offending value and the config field that controls it" — deliberately informative for debugging, which means an error response can echo back a malformed query or a bad config value. It never echoes chunk content or file-system paths outside the configured index root, and `TC-071` ([TestPlan.md](TestPlan.md#38-category-h--pipeline-cli-api-ui-tc-065--tc-072)) explicitly asserts the API "no stack trace in the body" for malformed/hostile input. |
 | Path traversal via API parameters | **Tested, not assumed safe.** `TC-071` posts `version="../../etc"` and other hostile input and asserts no filesystem access is attempted, patched at the `open` call site during the test. The `version` parameter is resolved through `registry.json`'s known version set, never concatenated directly into a filesystem path. |
 
 ### 2.5 Denial of Service
@@ -77,7 +77,7 @@ Axiom **persists about the corpus it was pointed at.** See §3.
 | Applies? | Detail |
 |---|---|
 | Adversarial query input hanging or crashing the process | **Directly addressed by [Rules.md Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade).** Every stage has a declared degradation ladder; nothing raises on malformed input. `TC-047` specifically tests ReDoS resistance in the regex fallback tokenizer against 12 adversarial inputs (`"a"*50000`, nested-quantifier-shaped strings) with a hard timeout. `TC-086` proves the agent loop terminates within its wall-clock budget even under a scripted-always-insufficient adversarial condition. |
-| Resource exhaustion via a very large query or a very large indexed file | **Bounded.** Query length is truncated to `settings.max_query_chars` (`TC-010`). A single oversized source file degrades through the chunking ladder (statement-boundary split → line-window fallback) rather than blowing memory (`TC-023`'s 1.2 MB minified-bundle case, `TC-024`'s 200-deep-nesting case). |
+| Resource exhaustion via a very large query or a very large indexed file | **Bounded.** Query length is truncated to `MAX_QUERY_CHARS` = 2048 (`agent/planner.py:38`, `TC-010`); this is a module constant, not a configurable `Settings` field, so it cannot be raised from the environment. A single oversized source file degrades through the chunking ladder (statement-boundary split → line-window fallback) rather than blowing memory (`TC-023`'s 1.2 MB minified-bundle case, `TC-024`'s 200-deep-nesting case). |
 | Traffic-volume DoS against the API | **Not defended, and not in scope.** There is no rate limiter ([`NG-08`](NonGoals.md#ng-08--no-authentication-authorisation-or-multi-tenancy)). A loopback-bound dev server with no external network exposure has no realistic traffic-volume DoS threat actor in this deployment model — the only process that can reach it is a process already running on the same machine. |
 
 ### 2.6 Elevation of Privilege
@@ -177,9 +177,20 @@ source repository itself required**, and communicate that plainly to anyone hand
 - **Any proprietary model API** — no network call to an external inference provider on the scored
   path ([`NG-17`](NonGoals.md#ng-17--no-proprietary-model-api-on-the-core-path)), so there is no
   third party the query text or retrieved code is ever transmitted to.
-- **Any other process on the host, by default** — the API binds `127.0.0.1`, not `0.0.0.0`, outside
-  of the explicit Docker networking case in [Deployment.md §3](Deployment.md#3-docker), where the
-  container boundary itself is the isolation mechanism.
+- **Any other process on the host, by default** — the API binds `127.0.0.1`, not `0.0.0.0`.
+
+**Container port mappings must be loopback-scoped on the host.** This is not a footnote to the
+binding rule above; it is the same rule, applied one layer out. A container that binds `0.0.0.0`
+*inside* its own network namespace is fine, but a host mapping written `"8000:8000"` publishes that
+socket on **every** host interface — which puts an unauthenticated API returning verbatim source
+code (§3.1) on whatever network the machine is attached to, venue wifi included. The mappings must
+read `"127.0.0.1:8000:8000"` and `"127.0.0.1:8501:8501"`. Without that, every "loopback-only"
+mitigation in §2 describes a system the deployment does not build, and
+[`NG-08`](NonGoals.md#ng-08--no-authentication-authorisation-or-multi-tenancy)'s justification —
+"anyone who can reach port 8000 can already read the repo" — stops being true, because a stranger on
+the same wifi cannot read the repo. **`docker-compose` in
+[Deployment.md §3.2](Deployment.md#3-docker) currently publishes both ports unscoped; that is a
+two-character fix and it is a submission blocker, not a hardening nicety.**
 
 ---
 
@@ -192,7 +203,8 @@ source repository itself required**, and communicate that plainly to anyone hand
 | Does Axiom scan the corpus for secrets or vulnerabilities? | No — explicitly out of scope, [`NG-16`](NonGoals.md#ng-16--no-security-scanning-of-indexed-code). |
 | Does Axiom execute the corpus? | No — structurally impossible, [`NG-15`](NonGoals.md#ng-15--no-code-execution-sandboxing-or-dynamic-analysis). |
 | Does Axiom retain query text or results across sessions? | No — [`NG-09`](NonGoals.md#ng-09--no-persistent-user-accounts-history-or-personalisation): no query history, no saved searches, no telemetry upload. A query leaves no trace beyond a local, unshipped log line. |
-| What is the operator's responsibility? | Treat `.axiom/` for a given corpus with the same access-control discipline as the corpus itself (§3.1), and never commit it to version control (already enforced by `.gitignore` per [Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed)). |
+| What is the operator's responsibility? | Treat `.axiom/` for a given corpus with the same access-control discipline as the corpus itself (§3.1), and never commit it to version control (enforced by `.gitignore` per [Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed)). |
+| Which directories are committed, and which are not? | **`data/` is never committed** — it holds downloaded model weights, vendored datasets and the operator's demo repo, and it is gitignored. The artefacts that *are* committed — the experiment log, the seeded tune/dev id lists, benchmark rows — live under **`artifacts/`**, precisely so that no runbook ever has to `git add` a path inside an ignored tree. A runbook that does is not a style problem: it is a step that either fails, or succeeds with `-f` and commits something nobody reviewed. |
 | Is the CoIR benchmark corpus sensitive? | No — it is a public dataset (`CoIR-Retrieval/apps` on the HF Hub); the data-handling concerns in this section are about **operator-supplied corpora** (the live-demo repo, or any real repository a future user points Axiom at), not the benchmark. |
 
 ---
@@ -210,7 +222,9 @@ risk every time it moves.
 Per [Rules.md §9.4](Rules.md#94-dependency-pinning):
 
 - `uv.lock` is committed and authoritative; `requirements.txt` is generated from it, never
-  hand-written, for the `pip`-fallback install path.
+  hand-written, for the `pip`-fallback install path. **As of 2026-09-23 no `uv.lock` exists**
+  (`T-001` in [Tracker.md](Tracker.md)), so this control is stated, not yet in force — and neither
+  is the `pip-audit` stage below, which reads a file generated from it.
 - Direct dependencies are pinned to an **exact** version in `pyproject.toml`
   (`faiss-cpu==1.8.0`-style), not a range — a hackathon-scale project has no appetite for a surprise
   minor-version bump changing behaviour on 24 September.
@@ -236,17 +250,28 @@ any time — pinning to a named revision (not a mutable branch pointer) is what 
 tested against" and "the model that ships" provably the same artefact, the same reproducibility
 argument as `uv.lock` applied to weights instead of packages.
 
-| Model | Repo | Pinning discipline |
+> **Control gap, stated plainly rather than implied away.** `NFR-09`, this section, and
+> [Rules.md §9.4](Rules.md#94-dependency-pinning) all assert revision pinning, and **no mechanism to
+> express a revision exists**: there is no `*_revision` field in `src/axiom/config.py`, no
+> `revision:` key in any `configs/*.yaml`, and no `--revision` on any documented download command.
+> Asserting a control that does not exist is worse than not claiming it, so it is tracked as
+> `T-202` in [Tracker.md](Tracker.md) with a binary outcome due Day 2: **implement it**
+> (`AXIOM_EMBEDDING_REVISION`, `AXIOM_RERANKER_REVISION`, `AXIOM_LLM_REVISION`, resolved to real
+> commit SHAs) **or withdraw the claim** from here and from `NFR-09`. The table below describes the
+> intended discipline, not the current state.
+
+| Role | Repo | Pinning discipline |
 |---|---|---|
-| Dense embedder | `Qwen/Qwen3-Embedding-0.6B` | Revision pinned in `configs/*.yaml`, not `main` |
-| Cross-encoder reranker | `BAAI/bge-reranker-v2-m3` | Revision pinned |
-| Query LLM | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` | Specific GGUF filename pinned (`qwen2.5-1.5b-instruct-q4_k_m.gguf`), not a directory glob |
-| Fallback embedder / reranker | `all-MiniLM-L6-v2`, `ms-marco-MiniLM-L-6-v2` | Same discipline, since a fallback that silently drifted would defeat `NFR-07`'s determinism-under-degradation guarantee |
+| Dense embedder, primary | `Qwen/Qwen3-Embedding-0.6B` | Revision pinned in `configs/*.yaml`, not `main` |
+| Dense embedder, fallback | `sentence-transformers/all-MiniLM-L6-v2` | Same discipline — a fallback that silently drifted would defeat `NFR-07`'s determinism-under-degradation guarantee |
+| Cross-encoder, primary on `eval.yaml` | `BAAI/bge-reranker-v2-m3` | Revision pinned |
+| Cross-encoder, **primary on `demo.yaml`** | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Revision pinned. This is not a fallback: the two profiles choose different primaries deliberately, accuracy on the untimed eval run against latency on the run the jury watches |
+| Query LLM | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` | Specific GGUF filename pinned, not a directory glob |
 
 We do not additionally verify a cryptographic signature over the downloaded weight files (§2.1) —
 the Hub's own content-addressed storage and TLS transport are treated as sufficient integrity
 controls for this project's realistic threat model, and building an independent signature-checking
-layer is out of proportion to a 10-day hackathon submission.
+layer is out of proportion to a hackathon submission built in a five-day window.
 
 ---
 

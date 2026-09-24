@@ -1,0 +1,1 @@
+{"b":0.75,"backend":"pure_python","doc_count":29,"k1":1.2,"keep_intact_identifier":true,"lowercase":true,"schema_version":1,"split_camel_case":true,"split_dots":true,"split_kebab_case":true,"split_snake_case":true,"stopwords":"none","tokenizer":"axiom.indexing.sparse:CodeTokenizer","tokenizer_version":1}

@@ -7,6 +7,16 @@
 > **Institute:** Thapar Institute of Engineering & Technology, Patiala
 > **Submission Deadline:** 27 September 2026
 
+**Owner:** Harshdeep Athawale
+**Last updated:** 2026-09-23
+**Status:** Active — front-door overview
+
+This document is the entry point to the project. It describes the system **as built**.
+Where a number here is measured, it says so; where it is a projection, it says that too.
+Authority for any detail: [`docs/_CONTRACT.md`](docs/_CONTRACT.md) →
+[`docs/PRD.md`](docs/PRD.md) / [`docs/Schema.md`](docs/Schema.md) →
+[`docs/TechSpecifications.md`](docs/TechSpecifications.md).
+
 ---
 
 ## Table of Contents
@@ -125,7 +135,7 @@ We build a **multi-pass agentic code retrieval system** that combines three retr
                   ┌─────────────────────┐
                   │  Agentic Evaluator   │◄──── "Are these results good enough?"
                   │  (Plan → Search →    │         │
-                  │   Read → Refine)     │         │  NO → rewrite query, re-retrieve
+                  │   Assess → Refine)   │         │  NO → rewrite query, re-retrieve
                   └──────────┬──────────┘         │
                              │ YES                 │
                              ▼                     │
@@ -171,14 +181,14 @@ Before retrieval, we classify the query to route it to the right strategy:
 
 #### Dense Index (Vector Store)
 
-- **Embedding model:** A CPU-friendly code embedding model (candidates: `Qwen3-Embedding:0.6B` quantized INT8, `all-MiniLM-L6-v2`, `CodeSage-small`, or `Jina-Code-v2`)
+- **Embedding model:** `Qwen/Qwen3-Embedding-0.6B` INT8 (primary), falling back to `sentence-transformers/all-MiniLM-L6-v2`, then to a seeded hashing embedder so the pipeline runs with zero models downloaded. **Measured results below come from the MiniLM rung.** Qwen3 pools the *last* token and takes an instruction prefix on the query side only; both are implemented in `indexing/embedder.py` and neither is optional for correctness.
 - **Chunking:** AST-aware — split by function/class/module boundaries using **tree-sitter** (not naive line-count chunking). Each chunk = one function or logical block with its docstring/comments.
-- **Vector store:** FAISS (IVF-PQ for CPU speed) or ChromaDB
+- **Vector store:** FAISS CPU. `IndexFlatIP` below 50,000 vectors, `IndexIVFPQ` at or above — exact search is cheap at demo scale and avoids folding ANN recall loss into a reported number. ChromaDB is not a dependency.
 - **Metadata per chunk:** file path, line range, function name, exported/private, imports
 
 #### Sparse Index (BM25)
 
-- **Library:** `rank-bm25` or `bm25s`
+- **Library:** `bm25s` (`rank-bm25` is ruled out — `ADR-003`), with a pure-Python BM25 fallback so the sparse leg still runs on a bare install
 - **Tokenization:** code-aware — split on camelCase, snake_case, dots; keep identifiers intact
 - **Corpus:** same AST-chunked snippets as the dense index
 
@@ -201,15 +211,19 @@ Before retrieval, we classify the query to route it to the right strategy:
 4. **Reciprocal Rank Fusion (RRF)** — merge all ranked lists:
 
 ```
-RRF_score(d) = Σ  1 / (k + rank_i(d))
+RRF_score(d) = Σ  w_i / (k + rank_i(d))
                i∈{dense, bm25, structural}
 ```
 
-where `k = 60` (standard constant). This is a rank-only algorithm — no score normalization needed.
+where `k = 60` and `w_i` is the per-`QueryType` weight vector, not a flat 1. A usage query should
+not weight dense the same as a semantic one: `SEMANTIC` is `(.60, .30, .10)`, `STRUCTURAL` is
+`(.20, .20, .60)`, `USAGE` is `(.25, .55, .20)`, `HYBRID` is flat. A signal that returns nothing has
+its weight dropped and the rest renormalised. Rank-only, so no score normalisation is needed.
+(Appendix B derives the *unweighted* form as an illustration of the mechanism.)
 
 #### Pass 2: Cross-Encoder Reranking
 
-Take the top-N (N=20-50) from RRF. Score each (query, snippet) pair with a **cross-encoder reranker** (candidates: `Qwen3-Reranker-0.6B` quantized, `bge-reranker-v2-m3`, `ms-marco-MiniLM-L-6-v2`).
+Take the top-N from RRF — `fusion_top_n`, which is **25** on the demo profile and **5** on the eval profile, where the heavier `bge-reranker-v2-m3` is used and the candidate chain is narrowed to pay for it. Score each (query, snippet) pair with a **cross-encoder reranker** (candidates: `Qwen3-Reranker-0.6B` quantized, `bge-reranker-v2-m3`, `ms-marco-MiniLM-L-6-v2`).
 
 Cross-encoders are more accurate than bi-encoders because they see both query and document together — but too slow for first-stage retrieval over thousands of snippets. Using them only on the top-N is the sweet spot.
 
@@ -235,7 +249,11 @@ This is what makes the system **agentic** rather than a static retrieval pipelin
 
 1. **Plan** — decompose a complex query into sub-queries
 2. **Search** — run hybrid retrieval for each sub-query
-3. **Read** — examine retrieved snippets for relevance
+3. **Assess** — judge sufficiency from the *scores* (top-1 rerank score, and how many
+   results clear the floor). The LLM never sees snippet text: it classifies, expands,
+   decomposes and judges sufficiency, and that boundary is enforced by module structure,
+   not by convention. This is the project's central claim and `agent/evaluator.py`
+   implements exactly this.
 4. **Refine** — if results are poor, rewrite the query (add identifiers, change terms, broaden/narrow scope)
 5. **Combine** — merge results from multiple sub-queries into a coherent ranking
 
@@ -329,7 +347,7 @@ This is hard because:
 ### Our Approach
 
 1. **Cross-version index** — all versions' snippets in one unified index, each tagged with version metadata
-2. **Version-aware deduplication** — group near-identical snippets (cosine similarity > 0.95) across versions into "snippet families"
+2. **Version-aware deduplication** — group near-identical snippets (cosine similarity **>= 0.95**, sharing `symbol` + `file_path`) across versions into "snippet families"
 3. **Representative selection** — for each family, surface the most recent version by default, but allow expanding to see all versions
 4. **Diff highlighting** — when showing a snippet family, highlight what changed between versions
 5. **Ranking signal:** snippets that appear in *more* versions get a stability boost; snippets unique to a single version get a novelty signal
@@ -359,19 +377,24 @@ Performance on the **test split of CoIR** `AppsRetrieval` **dataset**:
 | **NDCG@10** | Are the most relevant results at the top?        | Normalized Discounted Cumulative Gain at cutoff 10 |
 | **MRR**     | How early does the first relevant result appear? | Mean Reciprocal Rank                               |
 
-**Reference baselines on CoIR Apps** (NDCG@10):
+**Reference baselines on CoIR Apps — quarantined, do not quote.**
 
-| Model         | Size | NDCG@10 |
-| ------------- | ---- | ------- |
-| BM25          | —    | 4.8     |
-| UniXcoder     | 0.1B | 1.4     |
-| E5-PT         | 0.3B | 10.6    |
-| BGE           | 0.6B | 14.7    |
-| E5-Mistral    | 7B   | 23.5    |
-| Voyage-Code-2 | —    | 26.5    |
-| Revela        | 3B   | 26.6    |
+This section previously carried a seven-row table of published NDCG@10 figures (BM25 4.8,
+UniXcoder 1.4, E5-PT 10.6, BGE 0.6B 14.7, E5-Mistral 23.5, Voyage-Code-2 26.5, Revela 26.6) and a
+target of "beat BGE (14.7)". **The table is withdrawn and the target with it.** An adversarial
+audit of this suite could not locate 14.7 in either paper the figure was attributed to, and no one
+on the team has since re-opened those papers to check. The rest of the rows inherited the same
+provenance and are no better attested.
 
-**Our target:** Beat BGE (14.7) significantly through hybrid retrieval + reranking. Competitive with the 20+ range through the agentic refinement loop.
+The rule, per [`docs/PRD.md` §2.0.3](docs/PRD.md#203-external-comparison-table--quarantined-pending-per-row-citation):
+**no row returns to this table without a specific paper, table and page read by a human.** A
+number that cannot be sourced is not a baseline, it is an anchor — and anchoring our own gates to
+it is how the 14.7 error nearly reached a slide.
+
+**Our target is expressed against our own measured baseline instead** — see *Measured Results*
+below and [`docs/PRD.md` §2](docs/PRD.md#2-goals-and-success-metrics), which states the milestone gates as
+multiples of `B`, the dense-only NDCG@10 we measured ourselves, rather than as absolute numbers
+borrowed from elsewhere.
 
 ### How to Generate the Evaluation JSON
 
@@ -393,6 +416,70 @@ with open("appsretrieval_results.json", "w") as f:
 ```
 
 Upload this JSON as a GitHub Release artifact tagged `PRISM_GENAI_HACKATHON_Y2026`.
+
+### Measured Results
+
+Everything below was produced by `scripts/run_eval.py` on this repository. Nothing here is a
+projection, a citation, or a target. Where a run is not reportable, it says so and why.
+
+**Screening benchmark — CoIR `AppsRetrieval`, full `test` split.**
+3,765 judged queries over an 8,765-document corpus. No truncation. `degraded: False`.
+
+| Arm | NDCG@10 | MRR@10 | Recall@100 | Wall clock |
+|---|---|---|---|---|
+| Dense only, `all-MiniLM-L6-v2` (22M params) | 7.59 | 6.39 | 27.22 | 39 min |
+| Dense + BM25, weighted RRF (.85/.15) | **7.78** | **6.60** | 27.17 | 17 min (cached) |
+| **Gate in `docs/PRD.md` §2** | **>= 1.36 x `B`** | >= 1.36 x `B_mrr` | — | — |
+
+`B` is the dense-only row above — **our own measured baseline**, NDCG@10 = 7.59. The gates are
+stated as multiples of it, not as absolutes: the previously-quoted absolute targets (20.0 / 22.0 /
+65.0) were derived from the unsourced "BGE 0.6B = 14.7" figure and were retired with it. On today's
+baseline `1.36 x B` is **10.3**, and the full pipeline has not yet been measured against it —
+no reranker weights exist, so every row above ran with rerank in passthrough.
+
+**What the ablation shows, and it is not what we assumed.** Adding the sparse leg moves NDCG@10 by
+`+0.19` and MRR@10 by `+0.21` — a real but small gain — while Recall@100 moves by `-0.05`, which is
+to say not at all. BM25 is **reordering** the candidate pool, not enlarging it. Every relevant
+document it surfaces, the dense leg had already found.
+
+That localises the problem precisely. The 27.2 recall ceiling is a property of the dense embedder
+alone, and fusion cannot lift it; neither can the reranker or the agent loop, which act even later
+in the pipeline. The only lever that moves this number is a stronger first-stage embedder — the
+`Qwen3-Embedding-0.6B` primary, which is 27x larger and has not yet been exported to ONNX and run.
+The architecture is sound and measured; the model underneath it is the fallback.
+
+We are deliberately **not** placing this number against published figures for other models. A
+draft of this section compared 7.59 to "BM25 at 4.8 and BGE-M3 at 7.37" and concluded we were
+"at the level of a model 25x our size". That comparison is withdrawn: those two figures carry
+exactly the same provenance as the retracted "BGE 0.6B = 14.7" — nobody on this team has opened the
+paper and read the table. Quarantine applies to *favourable* uncited numbers as strictly as to
+unfavourable ones, and a flattering comparison is the one most likely to reach a slide unchallenged.
+
+The comparison that *is* ours to make is internal, and it is in the table above: sparse-only 0.91,
+dense-only 7.59, hybrid 7.78 — three arms we ran ourselves, on the full split, one scoring each.
+If an external row is wanted for the deck, the rule is
+[PRD §2.0.3](docs/PRD.md#203-external-comparison-table--quarantined-pending-per-row-citation):
+one paper, one table, one page, read by a human, cited per row.
+
+**The binding constraint is `Recall@100 = 27.22`, not NDCG.** Reranking and agentic refinement can
+only reorder what the first stage already retrieved, so with roughly three-quarters of the relevant
+documents never entering the candidate pool, no amount of second-stage work reaches NDCG@10 of 20.
+First-stage recall — a stronger embedder, and fusing the sparse leg — is the only lever that moves
+it. This is measured, not argued.
+
+**Not yet reportable.** `scripts/run_eval.py` refuses to mark a run reportable while any
+`PLACEHOLDER` constant is active or the git tree is dirty (`Rules.md` AP-14). Seven constants are
+still unmeasured. The run above is therefore a **baseline**, not a submission number.
+
+**Version-aware and evolutionary (P1 + Bonus).** Measured on a generated 60-file, 3-version corpus
+(`scripts/make_demo_repo.py`), real stack — tree-sitter, faiss, bm25s, MiniLM:
+
+| Property | Measured | Budget |
+|---|---|---|
+| Incremental reindex, 50 changed files | **295 ms** | 45 s (`NFR-02`) |
+| Embedding calls for that reindex | **0** (101 blobs reused) | `FR-19` |
+| Cross-version storage | 201 blobs for 303 chunk-instances | — |
+| Snippet families over 3 versions | 107, of which 50 carry real diffs | `FR-21` |
 
 ### Hands-On Evaluation (Live Demo)
 
@@ -427,8 +514,8 @@ The jury will:
 | Component           | Library/Tool                                                  | Why                               |
 | ------------------- | ------------------------------------------------------------- | --------------------------------- |
 | **Embedding model** | `Qwen3-Embedding:0.6B` (INT8 quantized) or `all-MiniLM-L6-v2` | CPU-friendly, strong on code      |
-| **Vector store**    | FAISS (IVF-PQ) or ChromaDB                                    | Fast CPU-based ANN search         |
-| **BM25**            | `rank-bm25` or `bm25s`                                        | Lightweight, pure Python          |
+| **Vector store**    | FAISS CPU — `IndexFlatIP` < 50k vectors, `IndexIVFPQ` at/above | Exact at demo scale; ANN only when the corpus needs it |
+| **BM25**            | `bm25s` (+ pure-Python fallback)                              | Materially faster than `rank-bm25` on a 10k-chunk corpus (`ADR-003`) |
 | **Reranker**        | `bge-reranker-v2-m3` or `ms-marco-MiniLM-L-6-v2`              | Small cross-encoder, CPU-friendly |
 | **AST parsing**     | `tree-sitter` + `tree-sitter-javascript`                      | Industry-standard JS parser, fast |
 
@@ -436,8 +523,8 @@ The jury will:
 
 | Component                      | Library/Tool                                                   | Why                                                         |
 | ------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| **Agent framework**            | LangChain / LangGraph or custom                                | Query planning, tool use, refinement loop                   |
-| **LLM (query rewriting only)** | Small local model (Phi-3-mini / Qwen2.5-1.5B quantized) or API | Only for query classification + rewriting, not code reading |
+| **Agent framework**            | Custom — no framework dependency                               | The loop is ~100 lines with hard caps; a framework would add surface without adding capability (`ADR-007`) |
+| **LLM (query rewriting only)** | `Qwen2.5-1.5B-Instruct` Q4_K_M GGUF, **local only** — never a third-party API (`NG-17`) | Classification, expansion, decomposition and sufficiency only. Never reads code. Fully optional: the heuristic rule engine is the default path |
 
 ### Infrastructure
 
@@ -445,7 +532,7 @@ The jury will:
 | --------------------------- | ------------------------ | --------------------------------- |
 | **Language**                | Python                   | MTEB compatibility, ML ecosystem  |
 | **Evaluation**              | MTEB library             | Required by the problem statement |
-| **Version control parsing** | `gitpython` or `dulwich` | For P1 version-aware retrieval    |
+| **Version control parsing** | Shell out to `git` — no library dependency | `git diff --name-status` and `git worktree` are exactly the two things needed |
 | **API (if needed)**         | FastAPI                  | Lightweight, async                |
 
 ### Key Constraint: CPU-Only
@@ -453,8 +540,8 @@ The jury will:
 All embedding, retrieval, and reranking must run efficiently on CPU:
 
 - Use **INT8 quantized models** (ONNX Runtime or `optimum`)
-- Use **FAISS CPU** with IVF-PQ (approximate nearest neighbors, not brute force)
-- Reranker on top-20 only (not thousands)
+- Use **FAISS CPU**, flat inner-product below 50k vectors and IVF-PQ above
+- Reranker on the top `fusion_top_n` only (25 demo / 5 eval), never thousands
 - BM25 is inherently CPU-fast
 - Tree-sitter is C-based, extremely fast
 
@@ -501,6 +588,9 @@ All embedding, retrieval, and reranking must run efficiently on CPU:
 
 ## 12. Team & Responsibilities
 
+> Authority for per-requirement ownership is the `Owner` column of
+> [`docs/PRD.md §5`](docs/PRD.md#5-functional-requirements).
+
 | Member                 | Focus Area                                     | Key Deliverables                                                                           |
 | ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | **Prabinder Singh**    | Retrieval Core — Embedding + BM25 + RRF fusion | Dense index, BM25 index, hybrid fusion pipeline, MTEB evaluation wrapper                   |
@@ -519,25 +609,30 @@ All embedding, retrieval, and reranking must run efficiently on CPU:
 
 ## 13. Timeline (10 Days)
 
-We have **11 Sep – 27 Sep** (the build window). Registration closes **16 Sep**.
+**Re-baselined 2026-09-23.** The 15–25 Sep day plan this section used to carry **is void**, and
+so is every "Day 10 = 24 Sep" reference that went with it. The build window is now five days:
+**Day 1 = 2026-09-23, submission Day 5 = 2026-09-27 (23:59).** The authority for the plan is
+[`docs/ImplementationPlan.md` §0](docs/ImplementationPlan.md#0-re-baseline-notice--read-this-before-anything-else);
+this table is a summary of it and loses to it on any disagreement.
 
-| Day        | Date      | Milestone                                                                                                                                                      | Who                   |
-| ---------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| **1-2**    | 15-16 Sep | **Foundation:** Repo setup, dataset download (CoIR apps), tree-sitter parsing working, embedding model selected + tested on sample, BM25 index built on sample | All                   |
-| **3-4**    | 17-18 Sep | **Core Retrieval:** Dense index built on full corpus, BM25 index built, RRF fusion working end-to-end, first MTEB eval run                                     | Prabinder + Harshdeep |
-| **3-4**    | 17-18 Sep | **Structural:** AST parser + call graph builder working on sample JS codebase, structural query handler                                                        | Anish                 |
-| **3-4**    | 17-18 Sep | **Version:** Git-diff based indexing prototype, version tagging                                                                                                | Parth                 |
-| **5-6**    | 19-20 Sep | **Agentic Loop:** Query classifier, agent refinement loop, cross-encoder reranker integrated                                                                   | Harshdeep             |
-| **5-6**    | 19-20 Sep | **Integration:** All three signals (dense + BM25 + structural) fused, tested on real queries                                                                   | All                   |
-| **7**      | 21 Sep    | **Optimization:** Tune RRF weights, reranker threshold, embedding model comparison, MTEB eval on test split                                                    | Prabinder + Parth     |
-| **8**      | 22 Sep    | **P1 + Bonus:** Version-aware retrieval tested, evolutionary dedup working                                                                                     | Parth + Anish         |
-| **9**      | 23 Sep    | **Demo + PPT:** Record demo video (5 min), build PPT, write README with Docker/setup instructions                                                              | Harshdeep + Parth     |
-| **10**     | 24 Sep    | **Polish + Submit:** Final MTEB eval, generate `appsretrieval_results.json`, create GitHub release (`PRISM_GENAI_HACKATHON_Y2026`), submit Google Form         | All                   |
-| **Buffer** | 25-27 Sep | **Buffer + deadline (27 Sep).** Fix any last issues, re-submit if needed. Submission closes 27 Sep 11:59 PM.                                                                       | All                   |
+The re-baseline is a change of subject, not a slipped schedule. The system is built — 69 modules,
+645 tests passing. What remains is the part that is actually scored: measuring it, and producing a
+demo and a submission artifact from real numbers.
+
+| Day | Date | Milestone | Who |
+| --- | --- | --- | --- |
+| **1** | 23 Sep | Reproducible clone, green suite, real model stack installed and smoked | All |
+| **2** | 24 Sep | Full-split dense-only baseline `B` measured; ablation arms recorded in `artifacts/experiments.csv` | Prabinder + Parth |
+| **3** | 25 Sep | Tagged demo repo (10–50 files); reranker weights exported; rerank + agent deltas measured against `B` | Harshdeep + Anish |
+| **4** | 26 Sep | Demo video, deck and README built from measured numbers only; tuning frozen (train split only, `NG-29`) | Harshdeep + Parth |
+| **5** | 27 Sep | Final reportable eval run, `appsretrieval_results.json`, GitHub release `PRISM_GENAI_HACKATHON_Y2026`, Google Form | All |
 
 ---
 
 ## 14. Key Risks & Mitigations
+
+> Summary view. The canonical register is `RISK-01`–`RISK-12` in
+> [`docs/ImplementationPlan.md`](docs/ImplementationPlan.md#5-risk-register).
 
 | Risk                                        | Impact                              | Mitigation                                                                                                                         |
 | ------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |

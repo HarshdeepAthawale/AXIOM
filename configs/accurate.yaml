@@ -1,0 +1,7 @@
+# Widest candidate chain; used for ablation ceilings, not for latency claims.
+profile: accurate
+dense_top_k: 200
+sparse_top_k: 200
+structural_top_k: 100
+fusion_top_n: 50
+agent_max_passes: 2

@@ -3,7 +3,7 @@
 Docker build, the submission runbook for cutting `PRISM_GENAI_HACKATHON_Y2026`, rollback posture, and the demo-day runbook.
 
 **Owner:** Parth Deshmukh
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [Setup.md](Setup.md) · [PRD.md](PRD.md) · [ImplementationPlan.md](ImplementationPlan.md) · [Tracker.md](Tracker.md) · [TestPlan.md](TestPlan.md) · [NonGoals.md](NonGoals.md) · [Security.md](Security.md) · [Decisions.md](Decisions.md) · [_CONTRACT.md](_CONTRACT.md)
@@ -30,7 +30,7 @@ uptime we depend on. "Deployment" is Docker plus a runbook, not infrastructure.
 |---|---|
 | `src/axiom/`, `configs/*.yaml`, `pyproject.toml`, `uv.lock` | Model weights (embedder, reranker, query LLM GGUF) — see [Setup.md §5](Setup.md#5-models-and-dataset) |
 | The Python 3.11 interpreter and pinned dependency set | The CoIR `AppsRetrieval` dataset cache |
-| `tests/fixtures/mini_repo/` (the 14-file smoke fixture — tiny, deterministic, exists precisely so the image can self-verify) | Any target repository being indexed (`AXIOM_INDEX_ROOT`, the user's own corpus) |
+| `tests/fixtures/` (the 13-file `repo_v1` smoke fixture and its `repo_v2` successor — tiny, deterministic, and there precisely so the image can self-verify) | Any target repository being indexed (`AXIOM_INDEX_ROOT`, the user's own corpus) |
 | Nothing under `.axiom/` — index artefacts are always derived, per [Rules.md §9.5](Rules.md#95-what-may-and-may-not-be-committed) | The `.axiom/` index tree itself |
 
 Baking multi-gigabyte model weights into the image would violate [`NG-13`](NonGoals.md#ng-13--no-hosted-cloud-deployment)'s
@@ -41,10 +41,14 @@ evaluator's, where `HF_HOME` caching and the pre-download step already handle it
 stays small, builds fast, and the weights live in a bind-mounted `data/` directory that survives a
 container rebuild.
 
-`NFR-12`'s budget governs the mounted volume, not the image: on-disk index for 10k chunks stays
-under 1.5 GB including shared blobs; the primary model profile's total download stays under 2.5 GB;
-the fallback profile stays under 500 MB, so a bandwidth-limited evaluator running `configs/fast.yaml`
-can still reach a working demo.
+`NFR-12`'s budget governs the mounted volume, not the image. The numbers are owned by
+[Setup.md §5.1](Setup.md#51-what-gets-downloaded)'s disk arithmetic and are not restated here beyond
+their shape: the on-disk index for 10k chunks stays under 1.5 GB including shared blobs; the
+**primary** profile downloads ~4.6 GB and settles at ~7 GB on disk, with a ~10.4 GB transient peak
+during ONNX export; the **fallback** profile (`configs/fast.yaml`) is the one that stays under
+500 MB, so a bandwidth-limited evaluator can still reach a working demo. The "under 2.5 GB primary
+download" figure this section used to carry was contradicted by Setup's own model table and has
+been withdrawn rather than rounded.
 
 ---
 
@@ -58,6 +62,40 @@ install ordering from [Setup.md §3](Setup.md#3-install-cpu-torch-first-mandator
 **mandatory** here too — reversing it inside the container produces the same ~2.5 GB of dead
 `nvidia-*` wheels that §3 exists to prevent, except now baked irreversibly into an image layer.
 
+**Two things in this file are load-bearing and were wrong in an earlier draft. Read them before
+editing it.**
+
+**(1) `pip install torch` and `uv sync` do not share an environment.** `pip install` in this base
+image installs into the **system** `site-packages`. `uv sync` creates and populates **`/app/.venv`**,
+and `uv run` resolves against `/app/.venv` — so a system-level torch is invisible to it, `uv.lock`
+re-resolves `torch` from default PyPI, and the image ends up with the CUDA build plus ~2.5 GB of
+`nvidia-*` wheels. That is the exact failure the "CPU torch FIRST" comment claims to prevent, and
+the ordering does not prevent it because the two installs never meet.
+
+The fix is to tell **uv** about the CPU index, in `pyproject.toml`, so the lockfile itself resolves
+to the CPU wheel on every machine — the container, CI, and the three developer laptops alike:
+
+```toml
+# pyproject.toml
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+```
+
+Then `uv lock` once, commit the lockfile, and the Dockerfile needs no torch step at all. The
+alternative — drop `uv` from the image and use `pip install -r requirements.txt` into the system
+environment, keeping Setup.md §3's ordering — is equally correct and simpler to reason about; what
+is **not** correct is the mixture of the two.
+
+**(2) `ENTRYPOINT ["uv","run","axiom"]` means every `docker run` argument is an argument to a Typer
+app, not to a shell.** `docker run image -c "python -c ..."` therefore hands `-c` to `axiom` and
+produces a usage error, not a torch version. Anything that needs a shell must say so explicitly, or
+override the entrypoint.
+
 ```dockerfile
 # Dockerfile
 FROM python:3.11-slim-bookworm AS base
@@ -66,9 +104,12 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     CUDA_VISIBLE_DEVICES="" \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
     HF_HOME=/app/data/hf \
-    AXIOM_INDEX_ROOT=/app/.axiom \
-    AXIOM_DATA_ROOT=/app/data
+    AXIOM_INDEX_ROOT=/app/.axiom
+# NOTE: AXIOM_DATA_ROOT is deliberately absent -- it is NOT implemented (no code reads it,
+# see Setup.md section 7.1). Model and dataset paths resolve relative to WORKDIR, so the
+# image must keep /app as its working directory for data/models/... to be found.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential curl \
@@ -78,16 +119,15 @@ RUN pip install uv
 
 WORKDIR /app
 
-# --- CPU torch FIRST, exactly as Setup.md §3 mandates. Order matters: a later
-# `uv sync` must never be allowed to re-resolve torch into a CUDA build. ---
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-
+# CPU torch comes from [tool.uv.sources] in pyproject.toml, resolved into
+# uv.lock. There is deliberately no `pip install torch` line here: it would
+# install into the SYSTEM site-packages, which `uv run` never looks at.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 
 COPY src/ src/
 COPY configs/ configs/
-COPY tests/fixtures/mini_repo/ tests/fixtures/mini_repo/
+COPY tests/fixtures/ tests/fixtures/
 RUN uv sync --frozen
 
 # Non-root: nothing in this project needs root, and the mounted data/ and
@@ -100,13 +140,25 @@ CMD ["--help"]
 ```
 
 Verify the CPU-only build the same way [Setup.md §3](Setup.md#3-install-cpu-torch-first-mandatory-all-platforms)
-verifies a local install, just inside the container:
+verifies a local install — overriding the entrypoint, because the default one is the CLI:
 
 ```bash
 docker build -t axiom-retrieval:local .
-docker run --rm axiom-retrieval:local -c \
-  "python -c \"import torch; print(torch.__version__, torch.cuda.is_available())\""
+
+# 1. torch is the CPU build, and it is the one uv's venv actually resolved.
+docker run --rm --entrypoint /app/.venv/bin/python axiom-retrieval:local \
+  -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 # expected: 2.4.1+cpu False
+
+# 2. no CUDA wheels came along for the ride. This is the assertion that catches
+#    the bug above; the version string alone does not.
+docker run --rm --entrypoint /bin/sh axiom-retrieval:local \
+  -c "ls /app/.venv/lib/python3.11/site-packages | grep -i '^nvidia' || echo 'no nvidia wheels'"
+# expected: no nvidia wheels
+
+# 3. the CLI itself is wired.
+docker run --rm axiom-retrieval:local --app-version
+# expected: axiom 0.1.0
 ```
 
 `CUDA_VISIBLE_DEVICES=""` is set in the image itself, not only in CI, matching
@@ -134,8 +186,13 @@ services:
       - ./data:/app/data
       - ./.axiom:/app/.axiom
     ports:
-      - "8000:8000"
+      # LOOPBACK ONLY. A bare "8000:8000" binds 0.0.0.0 on the host and
+      # publishes an unauthenticated API that returns verbatim source code to
+      # anyone on the same wifi. See the note below this file.
+      - "127.0.0.1:8000:8000"
     healthcheck:
+      # Runs INSIDE the api container, so localhost is correct here and is
+      # unrelated to the host-side 127.0.0.1 publish above.
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 10s
       timeout: 5s
@@ -156,11 +213,23 @@ services:
       - ./data:/app/data
       - ./.axiom:/app/.axiom
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     depends_on:
       api:
         condition: service_healthy
 ```
+
+**Why both port mappings carry the `127.0.0.1:` prefix, and why removing it is not a
+convenience.** Docker's short `"8000:8000"` form binds the host side to `0.0.0.0` — every interface,
+including the venue wifi — and it does so *past* the host firewall, because the publish rule is
+installed in `DOCKER` chains ahead of the usual `INPUT` rules. The service behind it is
+unauthenticated **by design** ([`NG-08`](NonGoals.md#ng-08--no-authentication-authorisation-or-multi-tenancy)),
+and `GET /v1/chunk/{id}` returns **verbatim source code** from whatever repository was indexed. The
+loopback-bound posture that [Security.md](Security.md) §2 builds its entire trust boundary on is
+delivered by these two prefixes and by nothing else — `AXIOM_API_HOST: "0.0.0.0"` inside the
+container is correct and necessary (the process must accept connections forwarded in from the
+Docker bridge), and it is *not* what decides host exposure. If a demo genuinely needs a second
+machine to reach the UI, use an SSH tunnel, not a wider bind.
 
 This is the exact gotcha [Setup.md §9](Setup.md#9-troubleshooting)'s troubleshooting table
 forward-references: *"Streamlit UI loads but every query shows 'API unreachable' ... Inside Docker
@@ -176,8 +245,8 @@ Bring the stack up:
 ```bash
 docker compose up --build
 # once healthy:
-curl -s http://localhost:8000/v1/health
-open http://localhost:8501   # or: xdg-open / start, depending on platform
+curl -s http://127.0.0.1:8000/v1/health
+open http://127.0.0.1:8501   # or: xdg-open / start, depending on platform
 ```
 
 ### 3.3 Image size and build-time budget
@@ -187,12 +256,12 @@ open http://localhost:8501   # or: xdg-open / start, depending on platform
 | `python:3.11-slim-bookworm` base | ~120 MB | |
 | `apt-get` toolchain (`build-essential`, `git`, `curl`) | ~200 MB | needed only if a wheel falls back to a source build; kept because `tree-sitter-javascript` wheels are not guaranteed on every platform this image might be rebuilt for |
 | CPU torch + `uv sync` dependency set | ~900 MB | dominated by `onnxruntime`, `faiss-cpu`, `llama-cpp-python`, CPU torch |
-| Application code (`src/`, `configs/`, fixtures) | < 5 MB | |
+| Application code (`src/`, `configs/`, `tests/fixtures/`) | < 5 MB | |
 | **Total image** | **~1.2 GB** | model weights excluded — see §2 |
 
 Budget: image build completes in **under 4 minutes** on the reference box with a warm `pip`/`uv`
 cache, under 8 minutes cold. This is a build-time budget, not one of the `_CONTRACT.md §7` runtime
-performance budgets — it exists so a same-day image rebuild (e.g. after a Day-9 bug fix, per
+performance budgets — it exists so a same-day image rebuild (e.g. a 2026-09-26 bug fix, per
 [ImplementationPlan.md §4](ImplementationPlan.md#4-day-by-day-plan)) never becomes the bottleneck on
 a day that is already tight.
 
@@ -201,8 +270,8 @@ a day that is already tight.
 ## 4. Submission runbook
 
 The sequence that turns a green `M7` gate ([ImplementationPlan.md §3](ImplementationPlan.md#3-milestone-gates-m0m7))
-into the actual submitted artefact. Executed once, on Day 10, by Parth, with all four members
-available to unblock anything that surfaces.
+into the actual submitted artefact. Executed once, on **2026-09-27**, by Parth, with all four
+members available to unblock anything that surfaces.
 
 ### 4.1 Preconditions
 
@@ -213,7 +282,10 @@ green:
 
 1. `axiom index <repo>` completes inside the cold-index budget on the demo repo.
 2. `axiom query "<Q1|Q2|Q3>"` returns file+line results for all three archetypes.
-3. `scripts/run_eval.py` produces `appsretrieval_results.json` with NDCG@10 ≥ 20.0.
+3. `scripts/run_eval.py` produces `appsretrieval_results.json`, with the reported metric at or
+   above the target re-derived in [_CONTRACT.md §8](_CONTRACT.md#8-targets) from our own measured
+   dense-only baseline — and the ablation table that supports it. Not an absolute figure carried
+   over from a citation.
 4. `axiom reindex --to <newer-commit>` completes inside 45 s for a 50-file diff.
 5. `axiom query --all-versions "<query>"` returns `SnippetFamily`-collapsed results.
 6. The whole pipeline runs green with `AXIOM_LLM_ENABLED=false`.
@@ -239,8 +311,16 @@ grep -c PLACEHOLDER appsretrieval_results.json || true   # expect: no match
 
 # 3. Log the run in the experiment log (TestPlan.md §6.4 / Tracker.md §5)
 #    BEFORE tagging, so the tag's commit and the logged row agree.
-#    Append the row to data/experiments.csv, commit it.
-git add data/experiments.csv appsretrieval_results.json
+#
+#    TRAP (resolved 2026-09-23, but verify anyway): .gitignore used to ignore
+#    BOTH `data/` and `appsretrieval_results.json`, so this `git add` added
+#    NOTHING and `git commit` failed with "nothing to commit" -- on the one day
+#    nobody has the attention to notice. Two changes fixed it: the experiment
+#    log moved to `artifacts/` (not ignored), and `.gitignore` now carries an
+#    explicit `!appsretrieval_results.json`. Verify before relying on it:
+git check-ignore -v artifacts/experiments.csv appsretrieval_results.json   # must print nothing
+git add artifacts/experiments.csv appsretrieval_results.json
+git status --porcelain                                                # must list both
 git commit -m "eval: final reportable run for submission"
 
 # 4. Tag. The tag name is organiser-mandated and does not change even though
@@ -272,8 +352,8 @@ Per `PROJECT_OVERVIEW.md §11` and [PRD.md §2.1](PRD.md#21-definition-of-done):
 
 ### 4.4 Post-tag change policy
 
-[Rules.md §12](Rules.md#12-rule-change-procedure) item 4 already states rules may not be relaxed in
-the final two days; the same discipline applies to the tag. Once
+[Rules.md §12](Rules.md#12-rule-change-procedure) item 4 already states rules may not be relaxed on
+26–27 September; the same discipline applies to the tag. Once
 `PRISM_GENAI_HACKATHON_Y2026` is pushed, no further commit changes what the tag points at — see
 §5 for what happens if a defect is found afterward.
 
@@ -290,8 +370,8 @@ discovered after `PRISM_GENAI_HACKATHON_Y2026` is pushed.**
 | Situation | Correct action |
 |---|---|
 | The eval JSON is found to be stale (built from an older commit than the tag) | Re-run §4.2 steps 1–3 against the current tagged commit, re-attach the corrected `appsretrieval_results.json` to the *same* Release via `gh release upload --clobber`. The tag itself does not move — only the Release artifact is corrected. |
-| A P0 defect is found in the tagged commit before the 27 Sep 11:59 PM deadline | Fix on a branch, merge to `main`, **create a new, later commit**, and **retag**: `git tag -a PRISM_GENAI_HACKATHON_Y2026 -f -m "..."` then `git push -f origin PRISM_GENAI_HACKATHON_Y2026`. This is one of the few sanctioned uses of a force-push in this project, and only to a tag, never to `main` itself, and only before the deadline. |
-| A P0 defect is found after the deadline | Per the hackathon's own buffer-day allowance (`PROJECT_OVERVIEW.md §13`, "Buffer — Deadline day"), the same retag procedure applies up to 27 Sep 11:59 PM; after that, the submission is what it is — there is no post-deadline rollback path, because the organisers' own submission window is the actual boundary, not something this project's tooling can extend. |
+| A P0 defect is found in the tagged commit before the 2026-09-27 11:59 PM deadline | Fix on a branch, merge to `main`, **create a new, later commit**, and **retag**: `git tag -a PRISM_GENAI_HACKATHON_Y2026 -f -m "..."` then `git push -f origin PRISM_GENAI_HACKATHON_Y2026`. This is one of the few sanctioned uses of a force-push in this project, and only to a tag, never to `main` itself, and only before the deadline. |
+| A P0 defect is found after the deadline | The same retag procedure applies up to 2026-09-27 11:59 PM; after that, the submission is what it is — there is no post-deadline rollback path, because the organisers' own submission window is the actual boundary, not something this project's tooling can extend. |
 | The demo repo (`OQ-07`) turns out to have a licensing or provenance problem discovered late | Swap it and rebuild the P1/Bonus artefacts before retagging; never ship a corpus whose provenance is not clean, regardless of schedule pressure. |
 
 No blue/green, no canary, no staged rollout — a single retag is the entire mechanism, and it is
@@ -349,7 +429,7 @@ script is "Executed by the presenter before recording and again before the live 
    ```bash
    export HF_HUB_OFFLINE=1
    export AXIOM_OFFLINE=true
-   axiom search "how is the input normalized" --top-k 5
+   axiom query "how is the input normalized" --top-k 5
    ```
 3. Run the manual test script in full —
    [TestPlan.md §7](TestPlan.md#7-manual-test-script-demo-day), cases `M-01` through `M-13` — and
@@ -368,9 +448,11 @@ script is "Executed by the presenter before recording and again before the live 
    first query, per [Setup.md §9](Setup.md#9-troubleshooting)'s troubleshooting table — this is
    expected, not a bug, but it must never be what the recording shows:
    ```bash
-   curl -s "http://localhost:8000/v1/health?warm=true"
+   curl -s "http://127.0.0.1:8000/v1/health?warm=true"
    ```
-   Confirm the response reports all models loaded before starting to record.
+   Confirm `warmed` names every component before starting to record. On a **second** warm call
+   `warmed` is empty and `elapsed_ms` is near zero — that is the field reporting what *this* call
+   constructed, not a failure ([API.md §3.5](API.md#35-get-v1health)).
 3. Record. Show the wall-clock timer on screen for `M-13` per
    [TestPlan.md §7](TestPlan.md#7-manual-test-script-demo-day), and show `M-08` (incremental
    reindex) and `M-10` (evolutionary retrieval) running live, not narrated over a static screenshot —
@@ -388,7 +470,8 @@ recording machine). Specifically:
 2. Re-confirm `AXIOM_OFFLINE=true` if venue wifi is in doubt — a live query that hangs on a socket
    timeout in front of the jury is a worse outcome than a slightly slower but bounded offline
    response.
-3. Have the fallback profile (`configs/fast.yaml`, `AXIOM_LLM_ENABLED=false`) one command away. If
+3. Have the fallback profile (`configs/fast.yaml`, `AXIOM_LLM_ENABLED=false`) one command away —
+   and note that the profile the jury normally sees is `configs/demo.yaml`, not `default`. If
    anything about the primary profile misbehaves live, switching to the fallback and stating plainly
    that this is the documented degradation path (`NFR-07`, `US-12`) is a stronger showing than a
    silent failure — the jury scoring rubric rewards a working prototype, and "it degrades gracefully

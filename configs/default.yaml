@@ -1,0 +1,8 @@
+# Default profile: all three signals, primary models, agent loop on.
+profile: default
+dense_enabled: true
+sparse_enabled: true
+structural_enabled: true
+agent_enabled: true
+reranker_enabled: true
+evolutionary_enabled: false

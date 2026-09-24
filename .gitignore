@@ -1,0 +1,38 @@
+.venv/
+__pycache__/
+*.py[cod]
+.axiom/
+# Everything under data/ is a rebuildable artifact -- model exports, HF cache,
+# embedding caches, eval runs -- except the sweep evidence. A tuned constant in
+# config.py cites its sweep JSON by path (RESOLVED_PLACEHOLDERS), so that file
+# has to be in the repo or the citation points at nothing a reviewer can open.
+#
+# The four lines are load-bearing in this order: git never descends into an
+# excluded *directory*, so a bare `data/` makes the `!data/sweeps/*.json`
+# negation below unreachable and new evidence can only be added with
+# `git add -f`, which Rules.md section 9.5 forbids. Excluding the directory's
+# *contents* (`data/*`) instead leaves the door open for the negations.
+#
+# Scoped to `oq*.json` rather than `*.json`: the evidence files are a few KB
+# each and named for the question they answer, while a per-query predictions
+# dump landing in the same directory is 13 MB of rebuildable output. Matching
+# the naming convention keeps the rule from silently committing the latter.
+data/*
+!data/sweeps/
+data/sweeps/*
+!data/sweeps/oq*.json
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+models/
+*.onnx
+*.gguf
+# The MTEB submission artifact. It is ignored by default because intermediate
+# runs land here, but the ONE that ships must be committable -- Deployment.md
+# section 4.2 step 3 does `git add appsretrieval_results.json`, and Rules.md
+# section 9.5 forbids `git add -f`. The negation below is what makes that work.
+appsretrieval_results.json
+!appsretrieval_results.json
+.axiom*/

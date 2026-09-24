@@ -1,9 +1,9 @@
 # Decisions
 
-`ADR-###` log for PRISM: what was chosen, why, what alternatives were rejected, and what it would take to reverse the decision.
+`ADR-###` log for Axiom: what was chosen, why, what alternatives were rejected, and what it would take to reverse the decision.
 
 **Owner:** Prabinder Singh
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Status:** Draft
 
 Related: [PRD.md](PRD.md) · [NonGoals.md](NonGoals.md) · [OpenQuestions.md](OpenQuestions.md) · [TechSpecifications.md](TechSpecifications.md) · [Design.md](Design.md) · [Schema.md](Schema.md) · [Rules.md](Rules.md) · [ImplementationPlan.md](ImplementationPlan.md) · [Changelog.md](Changelog.md)
@@ -49,7 +49,7 @@ convention. Numbers are permanent; a superseded ADR keeps its number with a poin
 | [`ADR-010`](#adr-010--git-diff-as-the-sole-versioning-source-of-truth) | `git diff` as the sole versioning source of truth | Accepted | 2026-09-15 |
 | [`ADR-011`](#adr-011--sqlite-for-the-structural-index-not-a-graph-database) | SQLite for the structural index, not a graph database | Accepted | 2026-09-15 |
 | [`ADR-012`](#adr-012--onnx-runtime-int8--llamacpp-gguf-for-a-cpu-only-stack) | ONNX Runtime INT8 + llama.cpp GGUF for a CPU-only stack | Accepted | 2026-09-15 |
-| [`ADR-013`](#adr-013--reverse-doc2query-expansion-as-the-one-corpus-touching-intervention) | Reverse doc2query expansion as the one corpus-touching intervention | Proposed | 2026-09-16 |
+| [`ADR-013`](#adr-013--reverse-doc2query-expansion-as-the-one-corpus-touching-intervention) | Reverse doc2query expansion as the one corpus-touching intervention | Withdrawn | 2026-09-23 |
 | [`ADR-014`](#adr-014--frozen-extraforbid-pydantic-models-as-the-schema-base) | Frozen, `extra="forbid"` Pydantic models as the schema base | Accepted | 2026-09-15 |
 | [`ADR-015`](#adr-015--rename-prism-to-axiom) | Rename PRISM to Axiom | Accepted | 2026-09-16 |
 
@@ -59,7 +59,7 @@ convention. Numbers are permanent; a superseded ADR keeps its number with a poin
 
 **Status:** Accepted, 2026-09-16. Resolves [`OQ-01`](OpenQuestions.md#oq-01--is-the-two-profile-eval--demo-split-the-final-shape).
 
-**Context:** PRISM is scored against two corpora that share nothing but the word "code." The CoIR
+**Context:** Axiom is scored against two corpora that share nothing but the word "code." The CoIR
 `AppsRetrieval` screening benchmark is English problem statements retrieving standalone Python
 solutions with no cross-file structure. The live demo corpus is a multi-module JavaScript repo with
 real imports, exports, and a call graph. A structural AST/call-graph signal is the headline
@@ -240,7 +240,7 @@ breaks one of the two use cases.
   Functionally similar to what we built, but naming it as "one id plus a side table" instead of "two
   named ids" obscures that the side table's key *is* the second identity space — the decision here
   is really about naming it explicitly so [Rules.md Rule 1](Rules.md#rule-1--ids-are-sacred)'s
-  defences ("PRISM has exactly two id spaces and they never mix") have something concrete to
+  defences ("Axiom has exactly two id spaces and they never mix") have something concrete to
   enforce.
 
 **Consequences:** Every stage that touches an id must know which of the two it is holding — this is
@@ -262,10 +262,37 @@ results look good" is the naive first design. The evaluation harness hands the s
 queries in one run; a loop with no termination guarantee has a nonzero chance of hanging on one
 pathological query and costing the entire eval run.
 
-**Decision:** Max 2 passes (`AXIOM_AGENT_MAX_PASSES`), hard 5-second wall-clock deadline
-(`AXIOM_AGENT_WALL_CLOCK_MS`), checked before starting any new pass; on exhaustion, return the best
-results seen so far rather than erroring. Reference implementation in
-[Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5).
+**Decision:** `AXIOM_AGENT_MAX_PASSES = 2` bounds the **total** number of
+retrieve → fuse → hydrate → rerank cycles, **initial pass included** — two cycles, at most one
+refinement. Hard 5-second wall-clock deadline (`AXIOM_AGENT_WALL_CLOCK_MS`), checked before starting
+any *new* pass and again before a new pass's rerank; on exhaustion, return the best pass seen so far
+rather than erroring.
+
+**Pass-counting semantics, settled 2026-09-23.** The suite previously carried two incompatible
+readings of the same constant: this ADR, `Design.md §5.2`, `Appflow.md` Flow 3 and `API.md`'s
+`passes_used` all meant *2 total*, while
+[Rules.md AP-03](Rules.md#ap-03--unbounded-agent-loop-rule-3-contract-5)'s reference block seeds
+`best` from a retrieval taken *outside* the loop and therefore means *3 total*. Since the reranker
+dominates a pass's cost, that is roughly a 50% swing in p95 — large enough to decide whether
+`NFR-04` is met. **`agent/loop.py:run` implements 2 total** (`for pass_no in range(1, max_passes+1)`,
+with the whole retrieve→rerank cycle inside the loop body), so 2-total is the binding reading and
+Rules.md AP-03 is the block that must be rewritten. The transcribed loop, with all five termination
+conditions, is in
+[TechSpecifications.md §5.3](TechSpecifications.md#53-agent-loop-bound).
+
+Three further behaviours are part of this decision and were previously undocumented:
+
+- **Pass 1 is exempt from the deadline check.** A query issued against an already-exhausted budget
+  must still return something; a zero-length budget degrades to one pass, not to an empty answer.
+- **A refinement pass is abandoned *before* its rerank** if the deadline falls mid-pass, because the
+  reranker is ~80% of a pass's cost and the previous pass's result is already a good answer
+  (`TC-088`).
+- **Best-of, not last.** Passes are compared on `(cross_encoder_ran, top1)`: a pass whose
+  cross-encoder actually ran outranks one that degraded to passthrough, and only within the same
+  rung does raw top-1 decide. Comparing an RRF score against a cross-encoder score on magnitude
+  alone would discard a better-but-uncalibrated pass every time.
+- **`agent_enabled = false`** (the `eval` profile) collapses the loop to exactly one pass. Refinement
+  is the ablation, not the retrieval.
 
 **Alternatives considered:**
 - *Loop until a sufficiency predicate passes, no cap.* Rejected outright — this is the exact failure
@@ -275,10 +302,13 @@ results seen so far rather than erroring. Reference implementation in
   budget: each pass re-runs retrieval and a rerank batch; a 4-pass loop cannot fit inside the
   `NFR-04` 5-second p95 budget on the reference box without either shrinking the reranker's candidate
   width (hurting accuracy every query, not just the ones that need a second pass) or accepting a
-  budget breach.
+  budget breach. *Note that this rejection is an estimate, not a measurement* — no p95 exists yet
+  (`OQ-13`). What makes the cap safe regardless is the monotonic deadline, which bounds the loop
+  whether or not the pass-count arithmetic was right.
 
-**Consequences:** A query that would genuinely benefit from a third refinement pass does not get
-one. This is judged an acceptable trade because the two-pass gain is expected to be front-loaded
+**Consequences:** A query that would genuinely benefit from a second refinement (a third cycle) does
+not get one. This is judged an acceptable trade because the two-pass gain is expected to be
+front-loaded
 (the largest jump in result quality is pass 1 → pass 2; further passes have rapidly diminishing
 returns on a corpus this size), and because the trade is stated plainly rather than hidden.
 
@@ -350,9 +380,10 @@ sufficiency thresholds, query-preprocessing variants. Zero gradient steps anywhe
   [Rules.md §8](Rules.md#8-the-placeholder-convention).
 
 **Consequences:** The accuracy ceiling from configuration tuning alone is lower than a well-executed
-fine-tune could reach in principle. Accepted as the correct trade for a 10-day CPU-only project; the
-one exception carved out is doc2query expansion (`ADR-013`), which generates index-time text rather
-than training weights.
+fine-tune could reach in principle. Accepted as the correct trade for a CPU-only project inside the
+2026-09-23 → 2026-09-27 window. The one exception previously carved out — doc2query expansion,
+`ADR-013` — was **withdrawn on 2026-09-23**, so configuration tuning on the train split (`FR-26`) is
+now the *only* accuracy lever, and `NG-06` is absolute.
 
 **Reversal cost:** High under the current schedule (there is no time budget for it this cycle);
 architecturally low, since nothing in the pipeline assumes frozen weights beyond the ONNX export
@@ -440,9 +471,12 @@ the query LLM. Locked in `_CONTRACT.md §2`, enforced as
 [`NG-17`](NonGoals.md#ng-17--no-proprietary-model-api-on-the-core-path).
 
 **Alternatives considered:**
-- *PyTorch fp32 inference throughout.* Rejected: ~4x slower than the ONNX INT8 path (documented as
-  the reason `AXIOM_EMBEDDING_BACKEND=torch` is a debugging-only fallback in
-  [Setup.md §7.2](Setup.md)), and materially larger download/RSS footprint against `NFR-12`.
+- *PyTorch fp32 inference throughout.* Rejected: ~4x slower than the ONNX INT8 path, and
+  materially larger download/RSS footprint against `NFR-12`. Rejected *completely* — earlier
+  revisions of this ADR described `AXIOM_EMBEDDING_BACKEND=torch` as a debugging-only fallback,
+  but no such variable and no torch runtime exist in `indexing/embedder.py`. There is no torch
+  inference path to fall back to; below ONNX Runtime the ladder goes straight to the seeded hash
+  embedder.
 - *A proprietary API (OpenAI/Anthropic/Voyage) for embedding and reranking.* Rejected outright by
   [`NG-17`](NonGoals.md#ng-17--no-proprietary-model-api-on-the-core-path) — a network-restricted
   judging laptop, an expired key, or a rate limit could zero the score on judging day, which is an
@@ -464,33 +498,50 @@ already required to have declared fallbacks (`NFR-07`) regardless of runtime cho
 
 ## `ADR-013` — Reverse doc2query expansion as the one corpus-touching intervention
 
-**Status:** Proposed, 2026-09-16. Tracked as [`OQ-06`](OpenQuestions.md#oq-06--does-reverse-doc2query-expansion-earn-its-index-time-cost).
+**Status:** **Withdrawn, 2026-09-23.** Was `Proposed, 2026-09-16`. Closes
+[`OQ-06`](OpenQuestions.md#oq-06--does-reverse-doc2query-expansion-earn-its-index-time-cost) as
+"no, not this cycle."
 
 **Context:** [`NG-06`](NonGoals.md#ng-06--no-model-fine-tuning-or-training-of-any-kind) excludes
-gradient training but names one accepted exception: reverse doc2query expansion, which generates
+gradient training but named one accepted exception: reverse doc2query expansion, which generates
 index-time text (candidate queries a chunk would answer, appended to the chunk's sparse-index
 representation) rather than updating any model weight.
 
-**Decision (proposed):** Implement `axiom.indexing.expansion` as an optional index-time pass, gated
-by config, generating expansion terms with the same query LLM already in the stack (no new model),
-applied only to the sparse index's token stream — never to the dense embedding input, and never
-altering `Chunk.text` itself (the byte-exact round-trip guarantee in `NG-01` must hold regardless).
+**Why it is withdrawn — three independent reasons, any one sufficient:**
 
-**Alternatives considered:**
-- *Apply the same expansion to the dense embedding input.* Rejected for the proposal as written:
-  conflates two different jobs (BM25 vocabulary coverage vs. embedding semantics) in one change,
-  making the ablation in `OQ-06` harder to attribute a delta to.
-- *Skip it entirely, keep the corpus untouched.* The safe default until measured — this ADR remains
-  `Proposed`, not `Accepted`, specifically because [`OQ-06`](OpenQuestions.md#oq-06--does-reverse-doc2query-expansion-earn-its-index-time-cost)
-  has not yet produced the ablation number that would move it to `Accepted`.
+1. **It contradicts `ADR-008` and the contract, and the contradiction was never resolved.**
+   [`ADR-008`](Decisions.md#adr-008--the-query-llm-never-reads-code) and `_CONTRACT.md §2` state
+   that the query LLM has exactly four permitted jobs — classify, expand, decompose, judge
+   sufficiency — and "never receives chunk text as input." `NG-23` says the same. Reverse doc2query
+   *is* the LLM reading chunk text: that is its entire mechanism. The proposal reused "the same
+   query LLM already in the stack," so it was not a different component operating under a different
+   rule. Two resolutions were available and neither was taken: amend `ADR-008` to read "never at
+   **query time**" and carve an explicit, bounded index-time exception, or drop the proposal. We
+   drop it. The "never reads code" claim is the project's central innovation argument and the line
+   in `PRD.md §8` that earns the 15% theme-relevance criterion; a carve-out that a jury has to be
+   walked through is worth less than the claim it weakens.
+2. **The number it banked was fabricated.** `NonGoals.md NG-06` credited it with
+   "**+4 to +8 NDCG@10**" — roughly a quarter of the stated path to the accuracy target — presented
+   as an estimate with no source. It appears in no paper cited in this suite and in no run of ours.
+   A gate calibrated on it would have been calibrated on nothing. The estimate is retracted along
+   with the ADR; see [`PRD.md §2`](PRD.md#2-goals-and-success-metrics) for how accuracy targets are
+   now derived (from our own measured dense-only baseline, as relative gains).
+3. **It does not exist and there is no time to build it.** There is no
+   `src/axiom/indexing/expansion.py`. It would add one generation pass per corpus document to a cold
+   index already projected to miss `NFR-01` by 1.7–3.3x unaided
+   ([TechSpecifications.md §8.5](TechSpecifications.md#85-cold-index-placeholder-oq-14)) — on the
+   8,765-document APPS corpus that is hours, not minutes, and it was never priced into `NFR-01`.
 
-**Consequences (if accepted):** Extra index-time compute (one short generation per chunk) against the
-`NFR-01` 12-minute cold-index budget; a new failure mode to degrade gracefully (generation failure →
-skip expansion for that chunk, never abort the index, consistent with
-[Rules.md Rule 3](Rules.md#rule-3--never-raise-on-bad-input-degrade)).
+**Consequence:** `NG-06` is now absolute for this cycle — **nothing writes to the corpus**, neither
+by gradient nor by generation. `NonGoals.md NG-06` and `NG-19` have been corrected to remove both
+the "+4 to +8" and the claim that an accepted corpus-touching intervention exists.
 
-**Reversal cost:** Low — an index-time, config-gated pass with no model or schema change; disabling
-it is a one-line config flip and a reindex.
+**Reversal cost:** Low, and deliberately kept low. Reinstating it requires exactly two things, in
+this order: (a) an amendment to `ADR-008` and `_CONTRACT.md §2` that states the index-time exception
+explicitly and bounds it, agreed *before* any code is written; (b) a real ablation row — eval profile
+with and without expansion, same weights, same seed — replacing the withdrawn estimate. It is a
+config-gated index-time pass with no schema change, so the engineering is a day; the contract
+amendment is the part that must not be skipped again.
 
 ---
 
@@ -502,7 +553,7 @@ it is a one-line config flip and a reindex.
 a hand-edited fixture or a stale `chunks.jsonl` from an older build must fail loudly, not silently
 drop the unknown field and produce a subtly wrong index days later.
 
-**Decision:** Every schema model inherits `PrismModel`, configured `extra="forbid"`, `frozen=True`,
+**Decision:** Every schema model inherits `AxiomModel`, configured `extra="forbid"`, `frozen=True`,
 `str_strip_whitespace=False`. Full rationale in [Schema.md §2](Schema.md#2-module-layout).
 
 **Alternatives considered:**
@@ -553,17 +604,47 @@ organisers, not the project.
   reasoning framework, unrelated codebase — see `PROJECT_OVERVIEW.md` Appendix C), so reusing the
   name signals lineage without implying the two projects share code.
 
-**Consequences — this is the part that matters operationally:** the rename happened at the
-`_CONTRACT.md` and package-layout level immediately, but propagating it across every already-written
-document, docstring, and error class name is separate work, tracked as `T-201` in
-[Tracker.md](Tracker.md) and flagged explicitly in
-[`OQ-04`](OpenQuestions.md#oq-04--project-name-collision-with-a-rival-submission)'s "Known residue"
-note. As of this writing: `docs/` file headers still say "PRISM" (this very document's own title
-line among them); `src/axiom/core/errors.py`'s exception classes are still named `PrismError` and
-its subclasses; `_CONTRACT.md §1` still names the CLI entrypoint `prism` even though
-[Setup.md](Setup.md) and [TestPlan.md](TestPlan.md) already invoke `axiom`. None of this blocks
-engineering work — every reference resolves unambiguously within the file it appears in — but it
-must be fully consistent before the submission is packaged, per `T-201`.
+**Consequences — this is the part that matters operationally.** The rename landed in code first and
+in prose last, which produced eight days of drift.
+
+**Settled 2026-09-23, by the project owner, binding on every document:** the name is **Axiom**,
+everywhere, with exactly three exceptions.
+
+| Axis | Value |
+|---|---|
+| Python package / import root | `axiom` (`src/axiom/`) |
+| CLI entrypoint | `axiom` |
+| Environment-variable prefix | `AXIOM_` |
+| On-disk index root | `.axiom/` |
+| Exception base class | `AxiomError` (`src/axiom/core/errors.py`) |
+| **Exception 1** — release tag | `PRISM_GENAI_HACKATHON_Y2026`, organiser-prescribed, unchanged |
+| **Exception 2** — event name | "Samsung PRISM GenAI Hackathon" is the *event*, not the project |
+| **Exception 3** — rival repo | `github.com/DeshnaDey/Samsung-PRISM` is someone else's URL |
+| **Exception 4** — our repo URL | `github.com/HarshdeepAthawale/Samsung-Prism-Hack` predates the rename; renaming it breaks every documented clone URL. Left as-is |
+| **Exception 5** — on-disk sidecar | `sparse.bm25s/prism_meta.json` (`indexing/sparse.py:79`). The only `prism` literal that reaches disk. Renaming it is a format change requiring a full reindex; left as-is for this cycle |
+
+The complete list, with the reasoning for each, is
+[`_CONTRACT.md §0`](_CONTRACT.md#0-identity). Exceptions 4 and 5 were added on
+2026-09-23; this ADR originally named only the first three.
+
+`_CONTRACT.md §0/§1/§3` carried `prism` / `PRISM_` / package `prism` until 2026-09-23 and **has
+since been corrected** — twenty-one of the twenty-two docs already used `axiom`, and so does all 27k
+lines of `src/`. It was brought into line with them, not the reverse, notwithstanding its own "if a
+doc contradicts this file, the doc is wrong" clause: that clause presumes the contract is current,
+and on this axis it was not.
+
+The error taxonomy has been reconciled against the code rather than against prose: `errors.py`
+defines exactly `AxiomError`, `AxiomContractError`, `IndexNotFoundError`,
+`DegradationExhaustedError`. Documents that referred to `PrismConfigError`, `PrismModelError`,
+`PrismParseError` or `PrismBudgetError` were naming classes that do not exist; those references have
+been rewritten to name real classes or real mechanisms (a Pydantic `ValidationError` at startup, for
+instance). `Rules.md §9.2`'s seven-class taxonomy still over-enumerates and is flagged for its owner.
+
+**The line that caused the drift has been deleted.** `OpenQuestions.md` previously advised: "Until
+`T-201` lands, prefer whichever name the *file you are editing* already uses." That sentence
+institutionalised the divergence — it made every subsequent edit widen the gap by design, and it is
+the single identifiable cause of a 249-vs-0 split on the env prefix. It is removed, and the rule is
+now simply: use `Axiom`.
 
 **Reversal cost:** Low to reverse the naming itself (it is find-and-replace across identifiers, not
 an architecture change); the cost that matters is the one-time effort of finishing the propagation,
