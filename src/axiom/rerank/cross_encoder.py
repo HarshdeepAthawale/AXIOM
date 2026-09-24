@@ -49,6 +49,7 @@ report, and is safe only while the lexical rung stays disabled.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -97,6 +98,11 @@ DEFAULT_RERANK_MAX_CHARS = 4096
 #: Token-side window. Sized above the 4096-char budget's ~1300-token worst case so
 #: char truncation, not token truncation, is the binding constraint TC-063 observes.
 DEFAULT_RERANK_MAX_TOKENS = 1536
+
+#: Sentinel for "the model's token limit has not been looked up yet". ``None`` is
+#: a real answer here -- it means the artifact ships no readable config -- so it
+#: cannot double as the unset marker.
+_UNSET: Any = object()
 
 #: Pairs per forward pass. Scoring is independent per pair, so this trades peak RSS
 #: against call overhead and never changes results (TestPlan.md TC-061).
@@ -352,6 +358,8 @@ class OnnxCrossEncoder:
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _load_error: Exception | None = field(default=None, init=False, repr=False)
     _failure_reported: bool = field(default=False, init=False, repr=False)
+    _token_limit: Any = field(default=_UNSET, init=False, repr=False)
+    _warned_token_cap: bool = field(default=False, init=False, repr=False)
 
     @property
     def name(self) -> str:
@@ -441,6 +449,48 @@ class OnnxCrossEncoder:
                 raise RuntimeError(f"no tokenizer for {self.model_name} in {where}") from last_error
         return self._tokenizer
 
+    def _model_token_limit(self) -> int | None:
+        """The checkpoint's own positional limit, read from its exported config.
+
+        ``AXIOM_RERANK_MAX_TOKENS`` is one number, but the reranker ladder has
+        more than one rung and they do not agree: ``bge-reranker-v2-m3`` accepts
+        8192 tokens while ``ms-marco-MiniLM-L-6-v2`` stops at 512. Feeding the
+        larger budget to the smaller model is not a slow path or a truncation --
+        onnxruntime fails the graph outright ("Attempting to broadcast an axis
+        ... 512 by 1536"), which :meth:`rerank_detailed` catches and turns into a
+        passthrough. The reranker would then appear to be configured and running
+        while silently scoring nothing, which is the worst of the three outcomes.
+
+        So the limit comes from the model rather than from a constant that has to
+        guess which rung loaded. ``None`` when the artifact ships no config or an
+        unreadable one -- in which case the configured budget stands, because a
+        missing config is not evidence of a smaller limit.
+        """
+        if self._token_limit is not _UNSET:
+            return self._token_limit
+        with self._lock:
+            if self._token_limit is not _UNSET:
+                return self._token_limit
+            limit: int | None = None
+            config_path = self.onnx_path.parent / "config.json"
+            try:
+                raw = json.loads(config_path.read_text(encoding="utf-8"))
+                candidate = raw.get("max_position_embeddings")
+                if isinstance(candidate, int) and candidate > 0:
+                    limit = candidate
+            except (OSError, ValueError, TypeError):
+                limit = None
+            self._token_limit = limit
+        return limit
+
+    @property
+    def effective_max_tokens(self) -> int:
+        """The budget actually fed to the tokenizer: configured, capped by the model."""
+        limit = self._model_token_limit()
+        if limit is None:
+            return self.max_tokens
+        return min(self.max_tokens, limit)
+
     def score_pairs(self, pairs: Sequence[tuple[str, str]]) -> list[float]:
         """One batched forward pass over the pairs, returning one logit each."""
         if not pairs:
@@ -449,12 +499,32 @@ class OnnxCrossEncoder:
 
         session = self._ensure_session()
         tokenizer = self._ensure_tokenizer()
+        budget = self.effective_max_tokens
+        if budget < self.max_tokens and not self._warned_token_cap:
+            self._warned_token_cap = True
+            log_degradation(
+                _LOGGER,
+                f"{COMPONENT}:score_pairs",
+                f"{self.model_name} accepts {budget} tokens, "
+                f"but rerank_max_tokens is {self.max_tokens}",
+                f"truncating pairs at {budget} tokens",
+            )
         encoded = tokenizer(
             [query for query, _ in pairs],
             [document for _, document in pairs],
             padding=True,
-            truncation="only_second",
-            max_length=self.max_tokens,
+            # ``longest_first``, not ``only_second``. ``only_second`` says "the
+            # query is short, spend the budget on the document", which is true
+            # for the search box and false for a benchmark whose queries are
+            # whole problem statements -- and when it is false the tokenizer does
+            # not truncate the query, it raises ("Sequence to truncate too short
+            # to respect the provided max_length"), which surfaces as a rerank
+            # that silently fell through to passthrough. ``longest_first`` trims
+            # whichever side is longer, so a short query with a long document
+            # behaves exactly as before and a long query merely costs the query
+            # its tail instead of costing the whole stage.
+            truncation="longest_first",
+            max_length=budget,
             return_tensors="np",
         )
         feed = {name: encoded[name] for name in self._input_names if name in encoded}

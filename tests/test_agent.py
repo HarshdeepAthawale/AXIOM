@@ -610,3 +610,104 @@ class TestLoop:
                 )
             )
         assert len(signatures) == 1
+
+
+# ---------------------------------------------------------------------------
+# The real ONNX cross-encoder's token budget
+# ---------------------------------------------------------------------------
+
+
+class TestCrossEncoderTokenBudget:
+    """``rerank_max_tokens`` is one number; the reranker ladder has several rungs.
+
+    ``bge-reranker-v2-m3`` accepts 8192 tokens, ``ms-marco-MiniLM-L-6-v2`` stops
+    at 512. Feeding the configured 1536 to the smaller model does not truncate,
+    it fails the ONNX graph outright -- which ``rerank_detailed`` catches and
+    turns into a passthrough, so the reranker reads as configured-and-running
+    while scoring nothing. These pin the cap that prevents that.
+    """
+
+    @staticmethod
+    def _encoder(tmp_path: Path, config: str | None, max_tokens: int = 1536):
+        from axiom.rerank.cross_encoder import OnnxCrossEncoder
+
+        artifact = tmp_path / "model-int8"
+        artifact.mkdir(parents=True, exist_ok=True)
+        if config is not None:
+            (artifact / "config.json").write_text(config, encoding="utf-8")
+        return OnnxCrossEncoder(
+            model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            onnx_path=artifact / "model.onnx",
+            max_tokens=max_tokens,
+        )
+
+    def test_the_models_own_limit_caps_the_configured_budget(self, tmp_path: Path) -> None:
+        encoder = self._encoder(tmp_path, '{"max_position_embeddings": 512}')
+        assert encoder.max_tokens == 1536
+        assert encoder.effective_max_tokens == 512
+
+    def test_a_larger_model_limit_does_not_raise_the_configured_budget(
+        self, tmp_path: Path
+    ) -> None:
+        """The cap is a ceiling, never a floor -- config stays the operator's lever."""
+        encoder = self._encoder(tmp_path, '{"max_position_embeddings": 8192}')
+        assert encoder.effective_max_tokens == 1536
+
+    @pytest.mark.parametrize(
+        "config",
+        [None, "not json at all", "{}", '{"max_position_embeddings": null}',
+         '{"max_position_embeddings": 0}'],
+    )
+    def test_an_unreadable_config_leaves_the_budget_alone(
+        self, tmp_path: Path, config: str | None
+    ) -> None:
+        """A missing config is not evidence of a smaller limit."""
+        assert self._encoder(tmp_path, config).effective_max_tokens == 1536
+
+    def test_the_lookup_is_cached_and_survives_a_deleted_config(self, tmp_path: Path) -> None:
+        """Read once: this sits on the per-query path."""
+        encoder = self._encoder(tmp_path, '{"max_position_embeddings": 512}')
+        assert encoder.effective_max_tokens == 512
+        (tmp_path / "model-int8" / "config.json").unlink()
+        assert encoder.effective_max_tokens == 512
+
+    @pytest.mark.slow
+    def test_a_query_longer_than_the_budget_scores_instead_of_raising(self) -> None:
+        """``only_second`` raises when the *query* alone overflows the budget.
+
+        AppsRetrieval queries are whole problem statements, so a query over 512
+        tokens is the ordinary case there, not an edge one -- and the failure is
+        not a truncation, it is ``Sequence to truncate too short to respect the
+        provided max_length`` propagating out of the tokenizer and surfacing as a
+        rerank that fell through to passthrough.
+
+        Runs against the real exported artifact, which is gitignored (Setup.md
+        section 6.1), so it skips where the export has not been done rather than
+        asserting on a mock that cannot reproduce the bug.
+
+        On macOS/arm64 onnxruntime may print ``recursive_mutex lock failed`` as
+        the interpreter tears the session down. That is ORT's own shutdown path
+        firing after pytest has already reported, the exit code is still 0, and
+        it is not this test failing.
+        """
+        pytest.importorskip("onnxruntime", reason="needs the retrieval extra")
+        pytest.importorskip("transformers", reason="needs the retrieval extra")
+
+        from axiom.rerank.cross_encoder import OnnxCrossEncoder, _derive_onnx_path
+
+        onnx_path = _derive_onnx_path("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        if not onnx_path.is_file():
+            pytest.skip(f"no exported artifact at {onnx_path} (Setup.md section 6.1)")
+
+        encoder = OnnxCrossEncoder(
+            model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            onnx_path=onnx_path,
+            max_tokens=1536,
+        )
+        assert encoder.effective_max_tokens == 512, "the 512-token model must cap the 1536 budget"
+
+        long_query = "how is the user utterance normalised before dispatch " * 200
+        long_document = "function normalizeInput(value) { return value.trim() }\n" * 200
+        scores = encoder.score_pairs([(long_query, long_document)])
+        assert len(scores) == 1
+        assert isinstance(scores[0], float)
