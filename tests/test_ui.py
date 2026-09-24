@@ -355,6 +355,8 @@ class TestBackendSelection:
         # Port 1 is privileged and unbound; the probe must swallow the refusal.
         assert api_is_up("http://127.0.0.1:1", timeout=0.25) is False
 
+    # A refused connect is ~2s on Windows (TCP SYN retries), over the 1s budget.
+    @pytest.mark.smoke
     def test_an_unreachable_api_becomes_the_same_error_the_local_path_raises(self) -> None:
         """One exception type, so the rendering code never asks which backend failed."""
         from axiom.api.models import ErrorCode, QueryRequest

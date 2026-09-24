@@ -1,0 +1,3 @@
+# Keep LF in the working tree on every OS: tests compare chunk text byte-for-byte
+# against file lines, and core.autocrlf=true on Windows checks out CRLF.
+* text=auto eol=lf
