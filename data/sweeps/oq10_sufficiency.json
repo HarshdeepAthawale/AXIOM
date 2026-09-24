@@ -1,0 +1,137 @@
+{
+  "question": "OQ-10",
+  "task": "AppsRetrieval",
+  "split": "train",
+  "profile": "demo",
+  "queries": 1500,
+  "corpus": 5000,
+  "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "fusion_top_n": 25,
+  "sparse_weight": 0.15,
+  "agent_sufficiency_min_results": 3,
+  "top1_distribution": {
+    "min": 2.054e-05,
+    "p05": 0.00032189,
+    "p25": 0.0052688,
+    "median": 0.04028235,
+    "p75": 0.19812547,
+    "p95": 0.71837924,
+    "max": 0.98972987,
+    "mean": 0.15332883
+  },
+  "spearman_top1_vs_ndcg": 0.292663,
+  "top1_candidates": [
+    {
+      "agent_sufficiency_top1": 0.0005,
+      "refine_rate": 0.076,
+      "mean_ndcg_refined": 5.5646,
+      "mean_ndcg_stopped": 21.2339,
+      "separation": 15.6693
+    },
+    {
+      "agent_sufficiency_top1": 0.001,
+      "refine_rate": 0.118,
+      "mean_ndcg_refined": 7.7805,
+      "mean_ndcg_stopped": 21.6836,
+      "separation": 13.9031
+    },
+    {
+      "agent_sufficiency_top1": 0.005,
+      "refine_rate": 0.2467,
+      "mean_ndcg_refined": 9.8592,
+      "mean_ndcg_stopped": 23.3776,
+      "separation": 13.5184
+    },
+    {
+      "agent_sufficiency_top1": 0.01,
+      "refine_rate": 0.33,
+      "mean_ndcg_refined": 10.9793,
+      "mean_ndcg_stopped": 24.5073,
+      "separation": 13.528
+    },
+    {
+      "agent_sufficiency_top1": 0.05,
+      "refine_rate": 0.5287,
+      "mean_ndcg_refined": 11.89,
+      "mean_ndcg_stopped": 29.1879,
+      "separation": 17.2979
+    },
+    {
+      "agent_sufficiency_top1": 0.1,
+      "refine_rate": 0.6453,
+      "mean_ndcg_refined": 13.3167,
+      "mean_ndcg_stopped": 32.2819,
+      "separation": 18.9652
+    },
+    {
+      "agent_sufficiency_top1": 0.2,
+      "refine_rate": 0.7527,
+      "mean_ndcg_refined": 14.2371,
+      "mean_ndcg_stopped": 37.7114,
+      "separation": 23.4743
+    },
+    {
+      "agent_sufficiency_top1": 0.35,
+      "refine_rate": 0.836,
+      "mean_ndcg_refined": 15.8453,
+      "mean_ndcg_stopped": 41.4416,
+      "separation": 25.5963
+    },
+    {
+      "agent_sufficiency_top1": 0.5,
+      "refine_rate": 0.8927,
+      "mean_ndcg_refined": 16.7954,
+      "mean_ndcg_stopped": 47.0529,
+      "separation": 30.2575
+    }
+  ],
+  "floor_candidates": [
+    {
+      "agent_sufficiency_floor": 0.0001,
+      "min_results": 3,
+      "refine_rate": 0.03,
+      "mean_clearing": 23.537
+    },
+    {
+      "agent_sufficiency_floor": 0.0005,
+      "min_results": 3,
+      "refine_rate": 0.1193,
+      "mean_clearing": 20.2
+    },
+    {
+      "agent_sufficiency_floor": 0.001,
+      "min_results": 3,
+      "refine_rate": 0.1773,
+      "mean_clearing": 18.465
+    },
+    {
+      "agent_sufficiency_floor": 0.005,
+      "min_results": 3,
+      "refine_rate": 0.336,
+      "mean_clearing": 13.267
+    },
+    {
+      "agent_sufficiency_floor": 0.01,
+      "min_results": 3,
+      "refine_rate": 0.4167,
+      "mean_clearing": 10.621
+    },
+    {
+      "agent_sufficiency_floor": 0.05,
+      "min_results": 3,
+      "refine_rate": 0.6673,
+      "mean_clearing": 4.89
+    },
+    {
+      "agent_sufficiency_floor": 0.2,
+      "min_results": 3,
+      "refine_rate": 0.8607,
+      "mean_clearing": 1.695
+    }
+  ],
+  "placeholder_values": {
+    "agent_sufficiency_top1": 0.35,
+    "agent_sufficiency_floor": 0.2
+  },
+  "note": "Measured on the TRAIN split only; the test split was not consulted (NG-29)."
+}
