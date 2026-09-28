@@ -1,225 +1,303 @@
-# Axiom
+# Axiom: Agentic Code Intelligence
 
-Agentic code intelligence: multi-signal, version-aware code retrieval that runs entirely on CPU.
+**Multi-pass agentic code retrieval that runs entirely on CPU.** Ask a question about a codebase in
+plain English and get back a ranked list of the code snippets that answer it, each with its exact
+`file:line` location. Axiom retrieves and ranks existing code; it never generates code.
 
-**Owner:** Harshdeep Athawale
-**Last updated:** 2026-09-23
-**Status:** Draft
-
-> **On the name.** The project is **Axiom** (`ADR-015`, Accepted): the package, the import root, the
-> CLI (`axiom`), the environment prefix (`AXIOM_`) and the index directory (`.axiom/`) all carry it.
-> **PRISM** appears in exactly two places and refers to the Samsung programme, not this project: the
-> event name, "Samsung PRISM GenAI Hackathon", and the organiser-prescribed release tag
-> `PRISM_GENAI_HACKATHON_Y2026`.
-
----
-
-## What Axiom is
-
-A multi-pass agentic code retrieval system. Given a natural-language query and a
-code library too large for any LLM context window, it returns a **ranking of code
-snippets with file and line locations**. Retrieval only — no code generation, no
-answer synthesis.
-
-Three retrieval signals — dense embeddings, sparse BM25, and structural AST/call-graph —
-fused by Reciprocal Rank Fusion, refined by a cross-encoder reranker, and driven by a
-bounded agentic loop that classifies, plans, evaluates and rewrites. CPU-only.
+Samsung PRISM GenAI Hackathon, 3rd Edition (2026-27) · **Theme 01: Agentic Code Intelligence**
 
 | | |
 |---|---|
-| Event | Samsung PRISM GenAI Hackathon 3rd Edition (2026-27), Theme 01 |
-| Team | Incognito |
-| Build window | 2026-09-11 → 2026-09-27 (Day 10 = 2026-09-24) |
+| Team | **Incognito** |
+| Institute | Thapar Institute of Engineering & Technology, Patiala |
+| Members | Prabinder Singh · Anish Grover · Harshdeep Athawale · Parth Deshmukh |
 | Release tag | `PRISM_GENAI_HACKATHON_Y2026` |
 
-**Start here:** [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) — the problem, the architecture, the
-component walkthrough, the measured results and the jury-scoring breakdown, in one document.
+## Submission
+
+| Deliverable | Link |
+|---|---|
+| Demo video (≤ 5 min) | **LINK TO BE ADDED** |
+| Presentation | [PPTX](submission/Thapar_Incognito_Submission.pptx) · [PDF](submission/Thapar_Incognito_Submission.pdf) |
+| Screening result (CoIR `AppsRetrieval`) | [`appsretrieval_results.json`](appsretrieval_results.json), also attached to the release |
+| Dependencies | [`requirements.txt`](requirements.txt) (pip) · [`uv.lock`](uv.lock) (uv) |
+| Quickstart | [below](#quickstart), five minutes from clone to ranked results |
 
 ---
 
+## The problem
+
+Voice-assistant codebases span thousands of JavaScript files and dozens of agents and tools. Engineers
+rarely ask for new code. They ask **where something already happens**:
+
+| | Query | Why it is hard |
+|---|---|---|
+| **Q1** semantic | *How is the input preprocessed before going to the main function?* | "preprocess" appears nowhere in the code. `normalize()` does. Keyword search misses it. |
+| **Q2** structural | *Which files call tool XYZ before tool ABC?* | The answer is about **call order**, which is not in the text of any snippet. No embedding answers it. |
+| **Q3** usage | *Where is the Bluetooth-settings deeplink used?* | An exact literal string. Semantic search dilutes it among look-alikes. |
+
+The codebase is far larger than any LLM context window, it changes with every commit, and the system
+must run on a CPU. No single retrieval technique handles all three query types, so Axiom combines three.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Q([Query]) --> C[Classify + plan<br/>type · identifiers · expansion]
+    C --> D[Dense embeddings<br/>FAISS]
+    C --> S[Sparse BM25<br/>bm25s]
+    C --> G[Call graph<br/>SQLite, order-aware]
+    D --> F[Weighted RRF<br/>weights per query type]
+    S --> F
+    G --> F
+    F --> R[Cross-encoder<br/>rerank top-N]
+    R --> A{Sufficient?}
+    A -- yes --> OUT([Ranked snippets<br/>file:line + why])
+    A -- "no: refine, at most 2 passes, 5 s deadline" --> C
+```
+
+1. **Classify and plan.** Each query is typed as semantic, structural, usage or hybrid. Identifiers
+   are extracted (`preprocessInput`) and terms expanded (`preprocess` → `normalize`, `sanitize`).
+2. **Retrieve with three signals in parallel.**
+   - *Dense*: code embeddings catch meaning across vocabulary gaps.
+   - *Sparse*: code-aware BM25 (camelCase and snake_case split) catches exact identifiers and strings.
+   - *Structural*: a tree-sitter call, import and export graph in SQLite. Call lists keep **source
+     order**, so "X before Y" is answered from the graph, with ordinal evidence.
+3. **Fuse** with Reciprocal Rank Fusion, weighted by query type. A usage query leans on BM25, a
+   structural one on the graph. A signal that returns nothing has its weight redistributed.
+4. **Rerank** the top candidates with a cross-encoder that reads query and snippet together.
+5. **Check sufficiency.** A bounded agent loop judges the scores. If they are weak it rewrites the
+   query and retrieves again: at most two passes, with a hard 5 s deadline checked before each pass.
+
+**The LLM never reads code.** An optional local LLM (Qwen2.5-1.5B, GGUF) only classifies, expands,
+decomposes and judges sufficiency, and the module boundary enforces that. A heuristic rule engine is
+the default, so no LLM is needed at all, and nothing is ever sent to a third-party API.
+
+**Versions.** Chunks are content-addressed: each embedding is stored once under the hash of its
+text. `axiom reindex` reads `git diff` and re-embeds only chunks whose content is new, so renamed,
+moved or reverted code costs nothing. Across versions, near-identical snippets (cosine ≥ 0.95, same
+symbol and file) collapse into **snippet families** with per-version diffs, instead of crowding the
+results with copies.
+
+**Degradation ladder.** Every model has a fallback: no ONNX models, no faiss, no bm25s, no
+tree-sitter, and Axiom still returns ranked results and reports which rung loaded. It cannot fail on
+an unfamiliar machine.
+
+## Results
+
+Everything below was measured on this repository; nothing is a projection or a borrowed figure.
+
+**Screening benchmark: CoIR `AppsRetrieval`, full test split** (3,765 judged queries over 8,765
+documents, no truncation). Run marked `reportable` at commit `8d22680`; artifact
+[`appsretrieval_results.json`](appsretrieval_results.json).
+
+| Arm | NDCG@10 | MRR@10 | Recall@100 |
+|---|---|---|---|
+| Sparse only (BM25) | 0.91 | — | — |
+| Dense only | 7.59 | 6.39 | 27.22 |
+| **Hybrid RRF (dense + sparse @ 0.15)** | **7.78** | **6.60** | 27.17 |
+
+Encoder: `all-MiniLM-L6-v2` (22M parameters), the declared fallback, because the primary
+`Qwen3-Embedding-0.6B` has no ONNX export yet. The reranker was not in the scored run.
+
+**What the numbers say.** Fusion adds +0.19 NDCG@10 and nothing to recall: BM25 reorders the
+candidate pool but does not enlarge it. **Recall@100 = 27.2 is the ceiling.** About three-quarters of
+relevant documents never enter the pool, and reranking and refinement can only reorder what is
+already there. The lever is a stronger first-stage embedder, which is the first item under
+[what's next](#limitations-and-whats-next).
+
+> APPS pairs English problem statements with **Python** solutions, so the benchmark measures dense
+> and sparse retrieval only; the call-graph signal has nothing to work on there. The JavaScript,
+> multi-version demo corpus is where the structural signal, P1 and the Bonus are exercised. That is
+> why two config profiles exist: `configs/eval.yaml` and `configs/demo.yaml`.
+
+**Version-aware retrieval (P1)**, on the generated 60-file, 3-version JavaScript corpus:
+
+| Operation | Result |
+|---|---|
+| `reindex` v1.0.0 → v2.0.0, 50 files changed | 50 chunks re-embedded, 51 reused, **1.7 s** (budget 45 s) on a bare install |
+| `reindex` to content already seen (rename, revert, re-run) | **0** embedding calls, all 101 reused, about **0.25 s** |
+| Evolutionary retrieval (Bonus) | 107 snippet families over 3 versions, 50 carrying real diffs |
+
 ## Quickstart
 
-Five commands from a clean clone to ranked results, CPU-only. Full detail, per-platform notes and
-the verification ladder are in [Setup.md](docs/Setup.md).
+Requires Python 3.11 or 3.12 and git. CPU only.
 
 ```bash
 git clone https://github.com/HarshdeepAthawale/AXIOM.git && cd AXIOM
 uv venv --python 3.11 && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU torch FIRST
-uv sync --frozen
-axiom index tests/fixtures/mini_repo --version-id smoke --index-root /tmp/axiom-smoke
+uv sync --frozen --extra retrieval --extra structural
+axiom index tests/fixtures/repo_v1 --version-id smoke --index-root /tmp/axiom-smoke
 axiom query "how is user input normalized before dispatch" --version smoke --index-root /tmp/axiom-smoke --top-k 3
 ```
 
-The subcommand is `query`. There is no `axiom search`. Container path:
-`docker compose up --build`, then `curl -s http://127.0.0.1:8000/v1/health` — see
-[Deployment.md](docs/Deployment.md).
+The top result is `preprocessInput` in `src/utils/normalize.js`, returned in well under a second.
 
----
+**With pip instead of uv:**
 
-## Read in this order
+```bash
+python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # Linux: avoids the 2.5 GB CUDA build
+pip install -r requirements.txt
+pip install -e .
+```
 
-New to the project? Follow this path.
+With no models downloaded, Axiom runs on its fallback rungs and prints which ones loaded. For full
+accuracy, export the ONNX models as described in [Setup.md §6](docs/Setup.md). The optional local LLM
+(`uv sync --extra agent`, `llama-cpp-python`) needs a C compiler and is never required.
 
-1. [PRD.md](docs/PRD.md) — what we are building and why; requirements and success metrics
-2. [Design.md](docs/Design.md) — architecture, diagrams, and the reasoning behind the shape
-3. [Schema.md](docs/Schema.md) — the shared data model; **all four workstreams code against this**
-4. [TechSpecifications.md](docs/TechSpecifications.md) — component-by-component engineering spec
-5. [Setup.md](docs/Setup.md) — get it running from a clean clone
-6. [Rules.md](docs/Rules.md) — the binding engineering invariants; read before your first commit
+## Try the three query types
 
----
+On the bundled test repository indexed above:
 
-## Full index
+```bash
+axiom query "How is the input preprocessed before going to the main function?" --version smoke --index-root /tmp/axiom-smoke
+axiom query "Which files call preprocessInput before resolveTool?"            --version smoke --index-root /tmp/axiom-smoke
+axiom query "Where is the Bluetooth-settings deeplink used?"                   --version smoke --index-root /tmp/axiom-smoke
+```
 
-### Core
+Each result card shows the file and line range, which signals found it and at what rank, and why it
+ranked. This is real output for Q2 (`--snippet-lines 0`):
 
-| Doc | Purpose | Owner |
+```
+type       STRUCTURAL   passes 1 (sufficient)
+results    3 of top-k 3 in 347 ms
+
+2. src/tools/registry.js:8-15  dispatch
+   signals dense #1 · sparse #1 · structural #2
+   why structural: calls preprocessInput (ordinal 0) before resolveTool (ordinal 1)
+```
+
+Name both functions in a structural query. "Before `resolveTool`" triggers the ordering check;
+"before dispatch" is too vague to extract as an identifier.
+
+## Versions and evolutionary retrieval
+
+```bash
+python scripts/make_demo_repo.py /tmp/axiom_demo --files 60 --versions 3   # tagged v1.0.0 .. v3.0.0
+cd /tmp/axiom_demo
+axiom index . --at v1.0.0 --version-id v1.0.0 --index-root /tmp/axiom-demo-idx
+axiom reindex --from v1.0.0 --to v2.0.0 --version-id v2.0.0 --index-root /tmp/axiom-demo-idx
+axiom reindex --from v2.0.0 --to v3.0.0 --version-id v3.0.0 --index-root /tmp/axiom-demo-idx
+axiom families --multi-only --diffs --index-root /tmp/axiom-demo-idx       # one function across versions, with diffs
+axiom query "where is the deeplink parsed" --all-versions --index-root /tmp/axiom-demo-idx
+axiom versions --index-root /tmp/axiom-demo-idx
+```
+
+The generator is deterministic: the same `--seed` produces a byte-identical repository, so every
+number above is reproducible from the command alone.
+
+## Interfaces
+
+All three share one pipeline (`src/axiom/pipeline.py`), so they return identical results.
+
+| Surface | Start it | Notes |
 |---|---|---|
-| [PRD.md](docs/PRD.md) | Problem, personas, `FR-##` / `NFR-##` requirements, success metrics, jury alignment | Parth |
-| [TechSpecifications.md](docs/TechSpecifications.md) | Runtime, model stack, per-module specs, algorithms, config reference | Prabinder |
-| [Appflow.md](docs/Appflow.md) | Eight end-to-end runtime flows with sequence diagrams and budgets | Harshdeep |
-| [Design.md](docs/Design.md) | Architecture, principles, concurrency model, degradation ladder, extension points | Anish |
-| [Schema.md](docs/Schema.md) | Pydantic data model, id scheme, on-disk formats, SQLite DDL, invariants | Prabinder |
-| [ImplementationPlan.md](docs/ImplementationPlan.md) | Workstreams, day-by-day plan, `M0`–`M7` gates, `RISK-01`–`RISK-12` | Prabinder |
-| [Tracker.md](docs/Tracker.md) | `T-###` task board, burndown, standup log, eval metrics log | Parth |
-| [Rules.md](docs/Rules.md) | Cardinal rules, engineering invariants, anti-pattern gallery | Harshdeep |
-| [_CONTRACT.md](docs/_CONTRACT.md) | The locked technical contract every other doc defers to | Prabinder |
+| CLI | `axiom --help` | `index`, `reindex`, `query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc` |
+| REST API | `axiom serve --index-root <dir>` | `POST /v1/query`, `GET /v1/versions`, `GET /v1/families`, `GET /v1/chunk/{id}`, `GET /v1/health`. OpenAPI at `/docs`. Local-only by default; CORS is opt-in via `AXIOM_API_CORS_ORIGINS`. |
+| Web UI | `axiom ui --index-root <dir>` | Streamlit. Uses a running `axiom serve` if you pass `--api-base-url`, otherwise runs in-process. |
 
-### Decisions and history
+Full contracts: [API.md](docs/API.md).
 
-| Doc | Purpose | Owner |
-|---|---|---|
-| [Decisions.md](docs/Decisions.md) | `ADR-###` log: what was chosen, why, alternatives rejected | Prabinder |
-| [Changelog.md](docs/Changelog.md) | What shipped and when; breaking vs non-breaking; planned releases | Parth |
-| [BuildLog.md](docs/BuildLog.md) | Commit-by-commit engineering history of the implementation, developed by Anish Grover: what was built, what measuring it revealed, and the corrections kept on the record | Anish |
+## Reproduce the evaluation
 
-### Setup and ops
+```bash
+uv sync --frozen --extra retrieval --extra eval
+python scripts/run_eval.py --task AppsRetrieval --split test \
+    --backend scripts.eval_backends:hybrid --profile eval --out appsretrieval_results.json
+```
 
-| Doc | Purpose | Owner |
-|---|---|---|
-| [Setup.md](docs/Setup.md) | Prerequisites, install paths, env vars, verification ladder, troubleshooting | Parth |
-| [Deployment.md](docs/Deployment.md) | Docker, submission runbook, rollback, demo-day runbook | Parth |
-| [Submission.md](docs/Submission.md) | PPT outline, demo-video script, demo-day runbook, the results table as it goes on the slide | Harshdeep |
+The harness refuses to mark a run `reportable` if any placeholder constant is still live, if the
+git tree is dirty, or if the loaded encoder is not the one the result claims. `--limit` gives a quick
+smoke run and is always marked non-reportable. Every constant was tuned on the **train** split only;
+the test split was scored once per configuration. The run log is
+[`artifacts/experiments.csv`](artifacts/experiments.csv).
 
-### Quality and safety
+## Tests
 
-| Doc | Purpose | Owner |
-|---|---|---|
-| [TestPlan.md](docs/TestPlan.md) | `TC-###` cases, edge catalogue, performance tests, eval protocol, CI | Parth |
-| [Security.md](docs/Security.md) | Threat model (STRIDE), trust boundaries, data handling, dependency security | Harshdeep |
+```bash
+uv sync --frozen --extra dev --extra retrieval --extra structural --extra serve
+pytest
+```
 
-### API and integration
+650+ tests across chunking, fusion, the structural index, the agent loop, the API, the UI, the eval
+harness and the scripts. Any unmarked test slower than 1 s fails the suite, which keeps it fast.
 
-| Doc | Purpose | Owner |
-|---|---|---|
-| [API.md](docs/API.md) | HTTP endpoint contracts, error codes, CLI reference | Harshdeep |
+## Repository layout
 
-### Scope control
+```
+src/axiom/
+  schema/       frozen Pydantic contract every module codes against
+  chunking/     tree-sitter AST chunker, regex fallback
+  indexing/     embedder ladder, dense / sparse / structural index builders, manifests
+  retrieval/    the three signals and weighted RRF fusion
+  rerank/       ONNX cross-encoder with a passthrough fallback
+  agent/        classifier, planner, sufficiency evaluator, bounded loop, optional local LLM
+  versioning/   git diff, worktrees, incremental reindex, snippet families
+  eval/         MTEB adapter and metrics
+  api/  ui/     FastAPI service, Streamlit app
+  cli.py        Typer CLI
+  pipeline.py   the one orchestrator all surfaces share
+configs/        profiles: default, demo, eval, fast, accurate
+scripts/        eval runner, sweeps, latency bench, demo-corpus generator
+tests/          test suite and fixture repositories (repo_v1, repo_v2)
+docs/           full design documentation, indexed below
+submission/     presentation (PPTX and PDF)
+```
 
-| Doc | Purpose | Owner |
-|---|---|---|
-| [NonGoals.md](docs/NonGoals.md) | `NG-##` explicitly out-of-scope items and what we do instead | Parth |
-| [OpenQuestions.md](docs/OpenQuestions.md) | `OQ-##` unresolved questions, tracked not dropped | Harshdeep |
+## Limitations and what's next
 
-### Team and process
-
-| Doc | Purpose | Owner |
-|---|---|---|
-| [Contributing.md](docs/Contributing.md) | Branch naming, commits, PR checklist, ownership map, dev loop | Anish |
-| [Glossary.md](docs/Glossary.md) | Domain terms, acronyms, metric formulas, project jargon | Anish |
-
----
-
-## Where things live — canonical ownership
-
-Each fact has exactly one home. Link to it; never restate it.
-
-| Content | Canonical location |
+| Limitation today | Next step |
 |---|---|
-| Data model, field names, id scheme | [Schema.md](docs/Schema.md) |
-| SQLite DDL for `structural.sqlite` | [Schema.md](docs/Schema.md) |
-| Algorithm constants (RRF `k`, weights, thresholds) | [TechSpecifications.md](docs/TechSpecifications.md) |
-| Environment variables | [Setup.md](docs/Setup.md) |
-| Risk register `RISK-01`–`RISK-12` | [ImplementationPlan.md](docs/ImplementationPlan.md#5-risk-register) |
-| Day plan and `M0`–`M7` milestone gates | [ImplementationPlan.md](docs/ImplementationPlan.md) |
-| Task board `T-###`, burndown, eval run log | [Tracker.md](docs/Tracker.md) |
-| What was actually built, commit by commit | [BuildLog.md](docs/BuildLog.md) |
-| Decisions and rejected alternatives | [Decisions.md](docs/Decisions.md) |
-| Latency and index-build budgets | [TechSpecifications.md](docs/TechSpecifications.md), flows in [Appflow.md](docs/Appflow.md) |
-| Locked facts: name, model stack, package layout, data model, budgets, targets | [_CONTRACT.md](docs/_CONTRACT.md) |
+| Recall@100 = 27.2 caps accuracy; the scored run used the 22M-parameter fallback embedder | Export `Qwen3-Embedding-0.6B` to INT8 ONNX and re-measure first-stage recall |
+| Agent refinement measured as a wash: over 592 train queries, 25 helped, 26 hurt, mean ΔNDCG@10 −0.04 | Per-sub-query fan-out and LLM-written rewrites, kept only if they beat that measurement |
+| No reportable score yet for the full reranked pipeline | Score it on the test split once, as for every other arm |
+| Without tree-sitter, the regex chunker can attribute calls to the wrong function | Install the `structural` extra; the fallback exists so the system never stops, not for accuracy |
+| JavaScript only | More tree-sitter grammars |
 
-Docs that do **not** exist, and where that content lives instead:
+Every open question and its evidence is tracked in [OpenQuestions.md](docs/OpenQuestions.md), and
+every correction we made to our own earlier claims is kept in [BuildLog.md](docs/BuildLog.md#6-corrections-kept-on-the-record).
 
-| Expected name | Actual home |
+## Documentation
+
+| Start with | For |
 |---|---|
-| `Architecture.md` | [Design.md](docs/Design.md) |
-| `Retrieval.md`, `Structural.md`, `Agent.md`, `Versioning.md` | [TechSpecifications.md](docs/TechSpecifications.md) — each is a section |
-| `Evaluation.md` | [TestPlan.md](docs/TestPlan.md) for protocol; [Tracker.md](docs/Tracker.md) for the run log |
-| `Risks.md` | [ImplementationPlan.md](docs/ImplementationPlan.md#5-risk-register) |
-| `Roadmap.md` | [ImplementationPlan.md](docs/ImplementationPlan.md) for days; [Changelog.md](docs/Changelog.md) for releases |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | The whole project in one document: problem, architecture, components, results |
+| [Design.md](docs/Design.md) | Architecture, principles, concurrency model, degradation ladder |
+| [TechSpecifications.md](docs/TechSpecifications.md) | Per-module specs, algorithms, every tuned constant |
+| [Setup.md](docs/Setup.md) | Per-platform install, model export, environment variables, troubleshooting |
+| [API.md](docs/API.md) | HTTP and CLI reference |
+| [BuildLog.md](docs/BuildLog.md) | Commit-by-commit engineering history, and what measuring it revealed |
 
----
+<details>
+<summary>All documents</summary>
 
-## The one thing to understand before reading anything else
+| Doc | Purpose |
+|---|---|
+| [PRD.md](docs/PRD.md) | Requirements (`FR-##`, `NFR-##`), success metrics, jury alignment |
+| [Schema.md](docs/Schema.md) | Data model, id scheme, on-disk formats, SQLite DDL |
+| [Appflow.md](docs/Appflow.md) | End-to-end runtime flows with sequence diagrams and budgets |
+| [_CONTRACT.md](docs/_CONTRACT.md) | The locked technical contract every other doc defers to |
+| [Decisions.md](docs/Decisions.md) | `ADR-###` log: what was chosen, why, what was rejected |
+| [OpenQuestions.md](docs/OpenQuestions.md) | `OQ-##` questions, with the sweeps that resolved them |
+| [NonGoals.md](docs/NonGoals.md) | What is explicitly out of scope |
+| [TestPlan.md](docs/TestPlan.md) | Test cases, eval protocol, performance tests |
+| [Security.md](docs/Security.md) | Threat model and data handling |
+| [Rules.md](docs/Rules.md) | Engineering invariants and anti-patterns |
+| [Deployment.md](docs/Deployment.md) | Deployment and demo-day runbook |
+| [Submission.md](docs/Submission.md) | Deck outline and demo-video script |
+| [ImplementationPlan.md](docs/ImplementationPlan.md) · [Tracker.md](docs/Tracker.md) · [Changelog.md](docs/Changelog.md) | Plan, task board, releases |
+| [Contributing.md](docs/Contributing.md) · [Glossary.md](docs/Glossary.md) | Dev loop, terms and metric formulas |
 
-**The benchmark and the demo are different codebases, in different languages, and
-this is deliberate.**
+</details>
 
-CoIR `AppsRetrieval` is built on APPS: English competitive-programming problem
-statements retrieving **Python** solutions, each a standalone single file. The
-JavaScript constraint in the problem statement applies to the **live demo
-codebase**, not the screening benchmark.
+## Team
 
-Two consequences shape the whole system:
+| Member | Owned |
+|---|---|
+| Prabinder Singh | Retrieval core: embeddings, BM25, fusion, MTEB wrapper |
+| Anish Grover | Structural intelligence: tree-sitter chunking, call and import graph; built the implementation branch |
+| Harshdeep Athawale | Agentic orchestration and reranking: classifier, agent loop, cross-encoder, demo UI |
+| Parth Deshmukh | Versions and evaluation: incremental reindex, evolutionary retrieval, eval runner |
 
-1. The structural AST/call-graph signal contributes ~nothing to NDCG@10, because
-   APPS snippets have no cross-file call graph. It earns its place on the live demo,
-   where P1 and Bonus are judged.
-2. Sparse BM25 scores far below dense on APPS. The query is English prose, the document
-   is Python source, and the two share almost no vocabulary — so equal-weight fusion with
-   the sparse signal is a net negative, and `eval.yaml` down-weights it deliberately.
-   The exact weight is `OQ-02`, swept on the **train** split only.
-
-Axiom therefore ships two first-class profiles — `configs/eval.yaml` (dense-heavy,
-structural off) and `configs/demo.yaml` (all three signals). See
-[Decisions.md](docs/Decisions.md) for the ADRs and [OpenQuestions.md](docs/OpenQuestions.md#oq-01--is-the-two-profile-eval--demo-split-the-final-shape)
-for the tracking entry.
-
----
-
-## Conventions
-
-- Status vocabulary: `Planned` → `In Progress` → `Blocked` → `Done` → `Dropped`.
-- Identifier prefixes: `FR-##` functional requirement, `NFR-##` non-functional,
-  `ADR-###` decision, `TC-###` test case, `RISK-##`, `OQ-##` open question,
-  `NG-##` non-goal, `T-###` tracker task.
-- Every doc opens with a purpose line, `**Owner:**`, `**Last updated:**`, `**Status:**`.
-- Markdown only. No emoji. Tables where the content is tabular.
-- Cross-reference by relative link. One canonical home per fact.
-
-## Reference targets
-
-The suite previously carried a `BGE 0.6B = 14.7` baseline that appears in neither of the papers it
-was cited to; it has been removed rather than re-sourced. The headline claim is a **relative gain
-over our own measured dense-only baseline `B`**, with an ablation table next to it. See
-[_CONTRACT.md §8](docs/_CONTRACT.md#8-targets).
-
-**`B` now exists.** Measured 2026-09-23 on the full CoIR `AppsRetrieval` test split (8,765 docs,
-3,765 queries, no truncation), `all-MiniLM-L6-v2` INT8, rerank passthrough:
-
-| Metric | Baseline `B` (measured) | Our target | Status |
-|---|---|---|---|
-| NDCG@10 (CoIR AppsRetrieval test) | **7.59** | ≥ 1.36 × `B` = **10.3** | not yet measured — no reranker weights exist |
-| MRR@10 | **6.39** | ≥ 1.36 × `B_mrr` | not yet measured |
-| Recall@100 (first stage) | **27.22** | — | **the binding constraint**: 73% of relevant docs never enter the candidate pool, and nothing downstream of retrieval can reach them |
-| *(ablation)* sparse-only / hybrid RRF | 0.91 / 7.80 | — | hybrid is +0.21 NDCG (+2.76%) and **+0.00 recall** over `B` |
-| Query p50 | — | budget: ≤ 900 ms ([_CONTRACT.md §7](docs/_CONTRACT.md#7-performance-budgets-locked-8-core-cpu--16-gb-ram-reference-box)) |
-| Cold index, 10k chunks | — | budget: ≤ 12 min (same) |
-
-A budget is not a measurement, and the two latency rows above are still budgets — **no latency or
-memory figure in this project has ever been measured.** The accuracy rows *are* measured and are
-logged in [Tracker.md §5](docs/Tracker.md#5-eval-metrics-log) and `artifacts/experiments.csv`, but
-all three runs are stamped **`reportable: false`** (seven active placeholders, a dirty tree, and an
-embedder that is not the configured primary). Nothing here may be quoted to the jury as a final
-number until a reportable run replaces it.
+License: MIT, as declared in [`pyproject.toml`](pyproject.toml).
