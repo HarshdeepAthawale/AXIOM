@@ -33,7 +33,7 @@ Twelve slides. The jury weighting each slide serves is in brackets.
 | 6 | The agent loop, bounded | Sufficiency predicate, ≤2 passes, hard 5 s monotonic deadline checked *before* each pass. Agentic in a way that is measurable, not decorative. **The LLM never reads code** — it classifies, expands, decomposes, judges sufficiency. Enforced by module boundary. | Innovation 20% + Relevance 15% |
 | 7 | Results — what we measured | The ablation table from §3 below, plus the honest headline: the binding constraint is **Recall@100**, not NDCG. | Prototype 30% + Depth 25% |
 | 8 | Results — what we did not reach | The ≥20.0 target and why: a 22M-parameter fallback embedder, because the 0.6B primary has no ONNX export yet. State the gap, own it, show the diagnosis. A jury trusts a team that reports its own miss. | Depth 25% |
-| 9 | Version-aware retrieval (P1) | 50-file diff reindexed in **295 ms** against a 45 s budget, **0 embedding calls**, 101 blobs reused. Content addressing is why a rename costs nothing. | Prototype 30% |
+| 9 | Version-aware retrieval (P1) | A 50-file diff re-embeds only its **50 changed chunks** and reuses the other 51, in 1.7 s against a 45 s budget. Content already seen (a rename, a revert) costs **0 embedding calls**. Content addressing is why. | Prototype 30% |
 | 10 | Evolutionary retrieval (Bonus) | 107 snippet families over 3 versions, 50 carrying real diffs. Dedupe threshold 0.95 **measured**, not guessed: minimum-error over 45,753 pairs. | Innovation 20% |
 | 11 | It runs on the evaluator's laptop | The degradation ladder. Four rungs, every one exercised: no models, no faiss, no bm25s, no tree-sitter — still returns ranked results. This is why the demo cannot fail on an unknown machine. | Prototype 30% |
 | 12 | Engineering discipline | Locked Pydantic contract, 500+ tests, the eval harness that **refuses to mark its own run reportable** while a placeholder is active or the tree is dirty. Show that refusal on screen. | Depth 25% + Docs 10% |
@@ -55,7 +55,7 @@ see real wall-clock time elapse.
 | 1:00–1:45 | **Q1** semantic query | "'Preprocessed' appears nowhere in the code. Dense retrieval finds `normalize`, `sanitize`, `transform`. Note the per-signal ranks — that panel is the hybrid architecture, visible." |
 | 1:45–2:40 | **Q2** structural query | "This is the one no embedding answers. It's a question about the call graph and about *order*." Point at `calls parseIntent (ordinal 0) before resolveTool`. "That ordinal is read from source order we preserved at chunk time." |
 | 2:40–3:10 | **Q3** usage query | "A literal string. BM25 wins outright, and fusion lets it win — that's what per-query-type weights are for." |
-| 3:10–3:50 | `axiom reindex --from v1.0.0 --to v2.0.0` | "Fifty files changed. 295 milliseconds, and zero embedding calls — every vector was content-addressed and reused. A rename costs nothing." |
+| 3:10–3:50 | `axiom reindex --from v1.0.0 --to v2.0.0` | "Fifty files changed, so exactly fifty chunks are re-embedded. The other fifty-one are reused by content hash. Code that is only renamed or moved costs zero embedding calls." Read the real counts off the `embeddings` line on screen. |
 | 3:50–4:25 | `axiom families --diffs` | "The same function across three versions, collapsed into one result with diffs, instead of three near-identical hits crowding the list." |
 | 4:25–5:00 | `AXIOM_LLM_ENABLED=false`, fast profile, rerun Q1 | "No LLM, fallback models. Still ranked results. This is what runs on your laptop." |
 
