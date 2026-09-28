@@ -83,7 +83,7 @@ winget install Git.Git
   ```powershell
   wsl --install -d Ubuntu-24.04
   ```
-  Keep the repo inside the WSL filesystem (`~/Samsung-Prism-Hack`), not on `/mnt/c` — the `/mnt/c` bridge makes index writes ~5x slower and breaks `git diff` mtime assumptions.
+  Keep the repo inside the WSL filesystem (`~/AXIOM`), not on `/mnt/c` — the `/mnt/c` bridge makes index writes ~5x slower and breaks `git diff` mtime assumptions.
 - Paths inside [_CONTRACT.md](_CONTRACT.md) §4 (`ChunkLocation.file_path`) are **always POSIX-separated**, even when indexing on Windows. The chunker normalises separators; never write a backslash into a manifest by hand.
 
 ---
@@ -119,8 +119,8 @@ Torch is used only for the one-time ONNX export (§6), and transitively by `mteb
 ### 4.1 Primary path — `uv`
 
 ```bash
-git clone https://github.com/HarshdeepAthawale/Samsung-Prism-Hack.git
-cd Samsung-Prism-Hack
+git clone https://github.com/HarshdeepAthawale/AXIOM.git
+cd AXIOM
 
 uv venv --python 3.11
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -144,8 +144,8 @@ git add pyproject.toml uv.lock && git commit -m "deps: add bm25s"
 For anyone who cannot install `uv`, or for a minimal container layer:
 
 ```bash
-git clone https://github.com/HarshdeepAthawale/Samsung-Prism-Hack.git
-cd Samsung-Prism-Hack
+git clone https://github.com/HarshdeepAthawale/AXIOM.git
+cd AXIOM
 
 python3.11 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate

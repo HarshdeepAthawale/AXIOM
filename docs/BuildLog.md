@@ -288,7 +288,7 @@ replaced with the three measured arms in §4.1.
 ## 7. State and what is not done
 
 **The branch is local.** 16 commits on `build/axiom-implementation`, **nothing pushed** to
-`HarshdeepAthawale/Samsung-Prism-Hack`.
+`HarshdeepAthawale/Samsung-Prism-Hack` (since renamed `HarshdeepAthawale/AXIOM`).
 
 | Item | State |
 |---|---|

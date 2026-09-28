@@ -43,7 +43,7 @@ Five commands from a clean clone to ranked results, CPU-only. Full detail, per-p
 the verification ladder are in [Setup.md](docs/Setup.md).
 
 ```bash
-git clone https://github.com/HarshdeepAthawale/Samsung-Prism-Hack.git && cd Samsung-Prism-Hack
+git clone https://github.com/HarshdeepAthawale/AXIOM.git && cd AXIOM
 uv venv --python 3.11 && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU torch FIRST
 uv sync --frozen

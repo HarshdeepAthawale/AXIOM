@@ -620,12 +620,12 @@ everywhere, with exactly three exceptions.
 | **Exception 1** — release tag | `PRISM_GENAI_HACKATHON_Y2026`, organiser-prescribed, unchanged |
 | **Exception 2** — event name | "Samsung PRISM GenAI Hackathon" is the *event*, not the project |
 | **Exception 3** — rival repo | `github.com/DeshnaDey/Samsung-PRISM` is someone else's URL |
-| **Exception 4** — our repo URL | `github.com/HarshdeepAthawale/Samsung-Prism-Hack` predates the rename; renaming it breaks every documented clone URL. Left as-is |
-| **Exception 5** — on-disk sidecar | `sparse.bm25s/prism_meta.json` (`indexing/sparse.py:79`). The only `prism` literal that reaches disk. Renaming it is a format change requiring a full reindex; left as-is for this cycle |
+| **Exception 4** — on-disk sidecar | `sparse.bm25s/prism_meta.json` (`indexing/sparse.py:79`). The only `prism` literal that reaches disk. Renaming it is a format change requiring a full reindex; left as-is for this cycle |
 
 The complete list, with the reasoning for each, is
-[`_CONTRACT.md §0`](_CONTRACT.md#0-identity). Exceptions 4 and 5 were added on
-2026-09-23; this ADR originally named only the first three.
+[`_CONTRACT.md §0`](_CONTRACT.md#0-identity). Two exceptions were added on
+2026-09-23; this ADR originally named only the first three. One of them, our own repository URL,
+was retired on 2026-09-29 when the repository was renamed to `AXIOM`.
 
 `_CONTRACT.md §0/§1/§3` carried `prism` / `PRISM_` / package `prism` until 2026-09-23 and **has
 since been corrected** — twenty-one of the twenty-two docs already used `axiom`, and so does all 27k
