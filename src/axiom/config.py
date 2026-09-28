@@ -259,3 +259,40 @@ def get_settings(
 
     base.update({k: v for k, v in overrides.items() if v is not None})
     return Settings(**base)
+
+
+#: Default location of the exported models, relative to the working directory.
+MODEL_DIR = Path("data/models")
+
+
+def resolve_model_dir() -> Path:
+    """Where the exported models live: the directory holding ``onnx/`` and ``gguf/``.
+
+    ``AXIOM_MODEL_DIR`` wins when set. Otherwise ``./data/models`` if it exists,
+    else ``data/models`` in the Axiom checkout this package runs from. The last
+    rung matters because ``axiom reindex`` has to run inside the repository being
+    indexed, where a working-directory-relative path finds no models and every
+    rung of the ladder quietly degrades to the hashing embedder.
+    """
+    configured = os.environ.get("AXIOM_MODEL_DIR")
+    if configured:
+        return Path(configured)
+    if MODEL_DIR.is_dir():
+        return MODEL_DIR
+    checkout = Path(__file__).resolve().parents[2] / MODEL_DIR
+    return checkout if checkout.is_dir() else MODEL_DIR
+
+
+def onnx_model_file(directory: Path) -> Path:
+    """The ONNX graph in an export directory.
+
+    ``model.onnx`` is the documented name, but ``optimum-cli onnxruntime quantize``
+    writes ``model_quantized.onnx``, and following Setup.md section 6.1 to the
+    letter left an export Axiom could not see. Accept either, preferring the
+    documented name.
+    """
+    documented = directory / "model.onnx"
+    quantized = directory / "model_quantized.onnx"
+    if not documented.is_file() and quantized.is_file():
+        return quantized
+    return documented

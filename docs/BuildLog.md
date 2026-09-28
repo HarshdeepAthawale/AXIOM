@@ -200,8 +200,10 @@ embedder, not a better reranker.
 **Correction, 2026-09-29.** The first three rows describe a reindex whose blob store was already warm,
 not the cold 50-file diff they were quoted as. Re-measured on a bare install (hashing embedder): a cold
 v1.0.0 → v2.0.0 reindex re-embeds **50** of 101 chunks and reuses 51, in 1.7 s; repeating it, or
-reindexing to content already stored, makes **0** calls and reuses all 101, in about 0.25 s. The table
-is kept as recorded; §6 lists the correction.
+reindexing to content already stored, makes **0** calls and reuses all 101, in about 0.25 s. On the
+real stack (MiniLM INT8, fresh clone, laptop CPU) the same two steps take 5.0 s and 0.49 s. The same
+run found 112 families, 101 spanning several versions and 41 with non-empty diffs, not the 107 and 50
+above. The table is kept as recorded; §6 lists the correction.
 
 ### 4.3 Tuned constants
 
@@ -283,7 +285,8 @@ Listed because a build log that only records successes is a marketing document.
 | Sufficiency predicate cannot discriminate (ρ=0.06) | 120-query artifact; ρ=0.293 at 1,500 | §5.1 |
 | Cross-encoder loads in `.venv` | `onnxruntime` was installed, the ONNX *exports* were not | `d71a3c3` |
 | `is_multi_version` is a `GET /v1/families` response field | It is a Python property, never serialised | `7714308` |
-| A 50-file reindex takes 295 ms with 0 embedding calls | Warm blob store; cold, it re-embeds the 50 changed chunks (1.7 s, bare install) | §4.2 note |
+| A 50-file reindex takes 295 ms with 0 embedding calls | Warm blob store; cold, it re-embeds the 50 changed chunks (5.0 s on the real stack) | §4.2 note |
+| 107 snippet families, 50 carrying real diffs | A fresh run on the real stack gives 112 families, 41 with diffs | §4.2 note |
 
 A seventh belongs here from before this branch: an external comparison table cited "BM25 4.8 /
 BGE-M3 7.37" favourably while an unfavourable 14.7 from the *same unverified source* had been

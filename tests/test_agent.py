@@ -711,3 +711,45 @@ class TestCrossEncoderTokenBudget:
         scores = encoder.score_pairs([(long_query, long_document)])
         assert len(scores) == 1
         assert isinstance(scores[0], float)
+
+
+class TestRerankBudget:
+    """``reranker_timeout_ms`` bounds scoring, not the one-time model load.
+
+    Loading the ONNX session and tokenizer takes seconds in a fresh process. With
+    the clock started before the load, the first query of every CLI run timed out
+    with 0 pairs scored and fell through to passthrough, although scoring 25 pairs
+    takes about half a second once the model is resident.
+    """
+
+    @pytest.mark.smoke
+    def test_a_slow_model_load_does_not_spend_the_scoring_budget(self, monkeypatch) -> None:
+        from axiom.rerank import RerankMode, cross_encoder
+
+        scorer = FakeCrossEncoder(default=1.0)
+
+        def slow_load(_settings):
+            time.sleep(0.3)
+            return scorer
+
+        monkeypatch.setattr(cross_encoder, "load_cross_encoder", slow_load)
+        settings = get_settings(
+            "default", configs_dir=CONFIGS, llm_enabled=False, reranker_timeout_ms=200
+        )
+        chunks = [make_chunk(f"function f{i}() {{ return {i}; }}", symbol=f"f{i}") for i in range(3)]
+        candidates = [
+            FusedResult(
+                chunk_id=chunk.chunk_id,
+                rrf_score=1 / (61 + i),
+                contributions={DENSE: i + 1},
+                dominant_signal=DENSE,
+            )
+            for i, chunk in enumerate(chunks)
+        ]
+
+        outcome = cross_encoder.rerank_detailed(
+            "which function returns one", candidates, {c.chunk_id: c for c in chunks}, settings
+        )
+
+        assert outcome.mode is RerankMode.CROSS_ENCODER
+        assert scorer.pairs_scored == 3

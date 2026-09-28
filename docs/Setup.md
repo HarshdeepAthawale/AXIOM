@@ -339,6 +339,38 @@ Do not hand-download the parquet files and point the adapter at them — MTEB v2
 
 The hot path runs INT8 ONNX on `onnxruntime` CPU. Export is a one-time step per model; the artifacts are gitignored and rebuilt or copied to each box.
 
+### 6.0 Quick path: the two small models
+
+The reported `AppsRetrieval` score used these two, and they export in about three minutes. Verified
+end to end on a fresh clone on 2026-09-29. Run from the repository root:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # export-time only
+pip install "optimum[onnxruntime]" optimum-onnx
+export HF_HOME="$PWD/data/hf"
+
+optimum-cli export onnx --model sentence-transformers/all-MiniLM-L6-v2 \
+  --task feature-extraction --opset 17 data/models/onnx/all-minilm-l6-v2-fp32/
+optimum-cli onnxruntime quantize --onnx_model data/models/onnx/all-minilm-l6-v2-fp32/ \
+  --avx2 -o data/models/onnx/all-minilm-l6-v2-int8/
+
+optimum-cli export onnx --model cross-encoder/ms-marco-MiniLM-L-6-v2 \
+  --task text-classification --opset 17 data/models/onnx/ms-marco-minilm-l-6-v2-fp32/
+optimum-cli onnxruntime quantize --onnx_model data/models/onnx/ms-marco-minilm-l-6-v2-fp32/ \
+  --avx2 -o data/models/onnx/ms-marco-minilm-l-6-v2-int8/
+```
+
+`axiom index` then reports `embedder sentence-transformers/all-MiniLM-L6-v2 (dim 384)` instead of the
+hashing rung. Three things that are easy to get wrong:
+
+- **Output name.** The quantiser writes `model_quantized.onnx`, not `model.onnx`. Axiom accepts
+  either; nothing needs renaming.
+- **Where models are found.** `AXIOM_MODEL_DIR` if set; otherwise `./data/models`; otherwise
+  `data/models` in the Axiom checkout. So `axiom reindex`, which must run inside the repository being
+  indexed, still finds the models exported here.
+- **Quantiser flag.** `--avx2` suits almost any x86-64 laptop. Use `--avx512_vnni` (below) only on a
+  CPU that has it, and `--arm64` for native arm64 onnxruntime.
+
 ### 6.1 Export
 
 ```bash

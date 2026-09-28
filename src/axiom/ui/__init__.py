@@ -127,6 +127,9 @@ def launch(
         str(app_path()),
         "--server.port",
         str(listen_port),
+        # Streamlit binds every interface by default; the UI is local-only (NG-08).
+        "--server.address",
+        "127.0.0.1",
     ]
     if headless:
         command += ["--server.headless", "true"]

@@ -360,6 +360,8 @@ class OnnxEmbedder(Embedder):
         :func:`load_embedder` can take the next rung. Callers other than the
         ladder should not use this directly.
         """
+        from axiom.config import onnx_model_file
+
         directory = _onnx_dir_for(settings, model_id)
         override = _tunable(settings, "embedding_onnx_path", None)
         # The override names one artifact, so it can only mean the configured
@@ -368,7 +370,7 @@ class OnnxEmbedder(Embedder):
         if override and model_id == settings.embedding_model:
             onnx_path = Path(override)
         else:
-            onnx_path = directory / "model.onnx"
+            onnx_path = onnx_model_file(directory)
         tokenizer_path = onnx_path.parent / "tokenizer.json"
         if not onnx_path.is_file():
             raise FileNotFoundError(f"no ONNX export at {onnx_path}")
@@ -383,7 +385,10 @@ def _onnx_dir_for(settings: Settings, model_id: str) -> Path:
     ``Qwen/Qwen3-Embedding-0.6B`` -> ``data/models/onnx/qwen3-embedding-0.6b-int8``,
     matching the paths Setup.md section 7.2 documents as defaults.
     """
-    root = Path(_tunable(settings, "model_root", ONNX_MODEL_ROOT))
+    from axiom.config import resolve_model_dir
+
+    configured = _tunable(settings, "model_root", None)
+    root = Path(configured) if configured else resolve_model_dir() / "onnx"
     return root / f"{model_id.rsplit('/', 1)[-1].lower()}-int8"
 
 

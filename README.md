@@ -111,13 +111,14 @@ already there. The lever is a stronger first-stage embedder, which is the first 
 > multi-version demo corpus is where the structural signal, P1 and the Bonus are exercised. That is
 > why two config profiles exist: `configs/eval.yaml` and `configs/demo.yaml`.
 
-**Version-aware retrieval (P1)**, on the generated 60-file, 3-version JavaScript corpus:
+**Version-aware retrieval (P1)**, on the generated 60-file, 3-version JavaScript corpus, with the
+MiniLM embedder on a laptop CPU (measured 2026-09-29):
 
 | Operation | Result |
 |---|---|
-| `reindex` v1.0.0 → v2.0.0, 50 files changed | 50 chunks re-embedded, 51 reused, **1.7 s** (budget 45 s) on a bare install |
-| `reindex` to content already seen (rename, revert, re-run) | **0** embedding calls, all 101 reused, about **0.25 s** |
-| Evolutionary retrieval (Bonus) | 107 snippet families over 3 versions, 50 carrying real diffs |
+| `reindex` v1.0.0 → v2.0.0, 50 files changed | **50** chunks re-embedded, 51 reused, **5.0 s** (budget 45 s) |
+| `reindex` v2.0.0 → v3.0.0, content already in the store | **0** embedding calls, all 101 reused, **0.49 s** |
+| Evolutionary retrieval (Bonus) | 112 snippet families over 3 versions: 101 span several versions, 41 carry real diffs |
 
 ## Quickstart
 
@@ -131,7 +132,8 @@ axiom index tests/fixtures/repo_v1 --version-id smoke --index-root /tmp/axiom-sm
 axiom query "how is user input normalized before dispatch" --version smoke --index-root /tmp/axiom-smoke --top-k 3
 ```
 
-The top result is `preprocessInput` in `src/utils/normalize.js`, returned in well under a second.
+The top result is `preprocessInput` in `src/utils/normalize.js`. This first run uses the fallback
+rungs, because no models are exported yet; the next section adds them.
 
 **With pip instead of uv:**
 
@@ -142,9 +144,19 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-With no models downloaded, Axiom runs on its fallback rungs and prints which ones loaded. For full
-accuracy, export the ONNX models as described in [Setup.md §6](docs/Setup.md). The optional local LLM
-(`uv sync --extra agent`, `llama-cpp-python`) needs a C compiler and is never required.
+With no models downloaded, Axiom runs on its fallback rungs and prints which ones loaded.
+
+**Real models.** Export the two small ONNX models the reported score used; this takes about three
+minutes and is spelled out in [Setup.md §6.0](docs/Setup.md#60-quick-path-the-two-small-models).
+`axiom index` then reports `embedder sentence-transformers/all-MiniLM-L6-v2`. Models are found from
+any working directory (set `AXIOM_MODEL_DIR` to keep them elsewhere).
+
+A CLI query loads the models in a fresh process each time, which takes a few seconds before the
+search itself. For interactive use, `axiom serve` or `axiom ui` keeps them loaded: about a second per
+query on a laptop CPU, with the cross-encoder scoring the top 25 candidates.
+
+The optional local LLM (`uv sync --extra agent`, `llama-cpp-python`) needs a C compiler and is never
+required.
 
 ## Try the three query types
 
@@ -195,7 +207,7 @@ All three share one pipeline (`src/axiom/pipeline.py`), so they return identical
 |---|---|---|
 | CLI | `axiom --help` | `index`, `reindex`, `query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc` |
 | REST API | `axiom serve --index-root <dir>` | `POST /v1/query`, `GET /v1/versions`, `GET /v1/families`, `GET /v1/chunk/{id}`, `GET /v1/health`. OpenAPI at `/docs`. Local-only by default; CORS is opt-in via `AXIOM_API_CORS_ORIGINS`. |
-| Web UI | `axiom ui --index-root <dir>` | Streamlit. Uses a running `axiom serve` if you pass `--api-base-url`, otherwise runs in-process. |
+| Web UI | `axiom ui --index-root <dir>` | Streamlit on `http://127.0.0.1:8501`, local-only like the API. Uses a running `axiom serve` if you pass `--api-base-url`, otherwise runs in-process. |
 
 Full contracts: [API.md](docs/API.md).
 

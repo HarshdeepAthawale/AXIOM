@@ -1576,7 +1576,7 @@ def ui_command(
             _emit_json(banner)
         else:
             _echo(
-                f"starting streamlit on http://localhost:{bind_port} (profile {settings.profile})"
+                f"starting streamlit on http://127.0.0.1:{bind_port} (profile {settings.profile})"
             )
 
         command = [
@@ -1587,6 +1587,15 @@ def ui_command(
             str(script),
             "--server.port",
             str(bind_port),
+            # Local-only, like `axiom serve` (NG-08): Streamlit otherwise binds every
+            # interface. Headless skips its first-run email prompt, which blocks a
+            # fresh install until someone presses Enter; the URL is printed above.
+            "--server.address",
+            "127.0.0.1",
+            "--server.headless",
+            "true",
+            "--browser.gatherUsageStats",
+            "false",
         ]
         raise typer.Exit(subprocess.call(command, env=env))
 

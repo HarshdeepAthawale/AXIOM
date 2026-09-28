@@ -98,6 +98,13 @@ def _guard_query_text(value: object, *, field: str) -> str:
     return collapsed
 
 
+def gguf_model_dir() -> Path:
+    """The GGUF directory under the resolved model directory (``AXIOM_MODEL_DIR``)."""
+    from axiom.config import resolve_model_dir
+
+    return resolve_model_dir() / "gguf"
+
+
 def resolve_model_path(settings: Settings) -> Path | None:
     """Locate the GGUF weights named by ``settings.llm_model``.
 
@@ -114,12 +121,13 @@ def resolve_model_path(settings: Settings) -> Path | None:
     named = Path(settings.llm_model)
     if named.is_file():
         return named
-    direct = DEFAULT_GGUF_DIR / named.name
+    gguf_dir = gguf_model_dir()
+    direct = gguf_dir / named.name
     if direct.is_file():
         return direct
-    if DEFAULT_GGUF_DIR.is_dir():
+    if gguf_dir.is_dir():
         wanted = named.name.lower()
-        for candidate in sorted(DEFAULT_GGUF_DIR.glob("*.gguf")):
+        for candidate in sorted(gguf_dir.glob("*.gguf")):
             if candidate.name.lower() == wanted:
                 return candidate
     return None
@@ -412,7 +420,7 @@ def get_llm(settings: Settings) -> QueryLLM | None:
             log_degradation(
                 _LOG,
                 "agent.llm",
-                f"GGUF weights for {settings.llm_model!r} not found under {DEFAULT_GGUF_DIR}",
+                f"GGUF weights for {settings.llm_model!r} not found under {gguf_model_dir()}",
                 "heuristic rule engine",
             )
         return None

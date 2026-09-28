@@ -570,8 +570,10 @@ def _derive_onnx_path(model_name: str) -> Path:
     which is exactly ``AXIOM_RERANKER_ONNX_PATH``'s documented default. Derived rather
     than hardcoded so the fallback checkpoint needs no second constant.
     """
+    from axiom.config import onnx_model_file, resolve_model_dir
+
     slug = model_name.rsplit("/", 1)[-1].lower()
-    return ONNX_MODEL_ROOT / f"{slug}-int8" / "model.onnx"
+    return onnx_model_file(resolve_model_dir() / "onnx" / f"{slug}-int8")
 
 
 def _build_encoder(
@@ -804,16 +806,21 @@ def rerank_detailed(
             pool, resolved_top_k, RerankMode.PASSTHROUGH, "no_hydrated_chunks", deadline.elapsed_ms
         )
 
+    # The budget covers scoring, not the one-time model load above. Loading the
+    # session and tokenizer costs seconds in a fresh process (the transformers
+    # import alone), so a clock started before it expired on the first query of
+    # every CLI run with 0 pairs scored, although scoring itself fits in ~0.5 s.
+    scoring = Deadline(float(settings.reranker_timeout_ms))
     scores: list[float] = []
     for start in range(0, len(pairs), resolved_batch):
-        if deadline.expired:
+        if scoring.expired:
             # Checked between batches, never mid-batch: a forward pass already in
             # flight is allowed to finish, mirroring the agent loop's deadline
             # discipline (Rules.md AP-03).
             log_degradation(
                 _LOGGER,
                 COMPONENT,
-                f"RERANKER_TIMEOUT after {deadline.elapsed_ms:.0f}ms "
+                f"RERANKER_TIMEOUT after {scoring.elapsed_ms:.0f}ms "
                 f"(budget {settings.reranker_timeout_ms}ms, {len(scores)}/{len(pairs)} scored)",
                 "rerank passthrough",
             )

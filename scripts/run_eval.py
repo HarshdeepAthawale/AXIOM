@@ -46,6 +46,10 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT / "src") not in sys.path:  # running from a clone without `pip install -e .`
     sys.path.insert(0, str(_REPO_ROOT / "src"))
+# The repo root too, so `--backend scripts.eval_backends:hybrid` imports. Without it
+# the backend resolves to nothing and the run silently scores the BM25 fallback.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from axiom.config import Settings, get_settings  # noqa: E402
 from axiom.core.errors import AxiomContractError, AxiomError, IndexNotFoundError  # noqa: E402

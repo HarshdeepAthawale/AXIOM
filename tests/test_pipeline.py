@@ -698,3 +698,44 @@ def test_no_optional_dependency_is_imported_by_importing_axiom() -> None:
     failed, leaked = eval(completed.stdout.strip())
     assert failed == [], f"modules failed to import on a bare install: {failed}"
     assert leaked == [], f"importing axiom pulled in optional dependencies: {leaked}"
+
+
+class TestModelDir:
+    """Models resolve independently of the working directory.
+
+    ``axiom reindex`` must run inside the repository being indexed, so a path
+    relative to the working directory found no models there and every rung
+    degraded to the hashing embedder without anyone asking for it.
+    """
+
+    def test_the_environment_variable_wins(self, tmp_path: Path, monkeypatch) -> None:
+        from axiom.config import resolve_model_dir
+
+        monkeypatch.setenv("AXIOM_MODEL_DIR", str(tmp_path / "models"))
+        assert resolve_model_dir() == tmp_path / "models"
+
+    def test_a_local_data_models_directory_is_used(self, tmp_path: Path, monkeypatch) -> None:
+        from axiom.config import MODEL_DIR, resolve_model_dir
+
+        monkeypatch.delenv("AXIOM_MODEL_DIR", raising=False)
+        (tmp_path / MODEL_DIR).mkdir(parents=True)
+        monkeypatch.chdir(tmp_path)
+        assert resolve_model_dir() == MODEL_DIR
+
+    def test_elsewhere_it_falls_back_to_the_checkout(self, tmp_path: Path, monkeypatch) -> None:
+        from axiom import config
+
+        monkeypatch.delenv("AXIOM_MODEL_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+        checkout = Path(config.__file__).resolve().parents[2] / config.MODEL_DIR
+        expected = checkout if checkout.is_dir() else config.MODEL_DIR
+        assert config.resolve_model_dir() == expected
+
+    def test_the_quantiser_output_name_is_accepted(self, tmp_path: Path) -> None:
+        from axiom.config import onnx_model_file
+
+        assert onnx_model_file(tmp_path) == tmp_path / "model.onnx"
+        (tmp_path / "model_quantized.onnx").write_bytes(b"")
+        assert onnx_model_file(tmp_path) == tmp_path / "model_quantized.onnx"
+        (tmp_path / "model.onnx").write_bytes(b"")
+        assert onnx_model_file(tmp_path) == tmp_path / "model.onnx"
