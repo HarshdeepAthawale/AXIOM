@@ -18,3 +18,7 @@ services:
         value: /opt/render/project/src/data/models
       - key: AXIOM_LLM_ENABLED
         value: "false"
+      # The free instance has a fraction of a CPU: scoring 25 candidates overran
+      # the 2.5 s rerank budget on every pass. Rerank the top 8 instead.
+      - key: AXIOM_FUSION_TOP_N
+        value: "8"
