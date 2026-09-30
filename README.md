@@ -21,6 +21,7 @@ Samsung PRISM GenAI Hackathon, 3rd Edition (2026-27) · **Theme 01: Agentic Code
 | Live demo | Web app: [axiom-nine-delta.vercel.app](https://axiom-nine-delta.vercel.app) · API: [axiom-api-lgbt.onrender.com](https://axiom-api-lgbt.onrender.com/v1/health) (free tier: first request may take a minute to wake) |
 | Presentation | [PPTX](submission/Thapar_Incognito_Submission.pptx) · [PDF](submission/Thapar_Incognito_Submission.pdf) |
 | Screening result (CoIR `AppsRetrieval`) | [`appsretrieval_results.json`](appsretrieval_results.json), also attached to the release |
+| AI disclosure | [AI_DISCLOSURE.md](AI_DISCLOSURE.md) |
 | Dependencies | [`requirements.txt`](requirements.txt) (pip) · [`uv.lock`](uv.lock) (uv) |
 | Quickstart | [below](#quickstart), five minutes from clone to ranked results |
 
