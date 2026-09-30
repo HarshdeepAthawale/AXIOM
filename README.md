@@ -207,7 +207,8 @@ All three share one pipeline (`src/axiom/pipeline.py`), so they return identical
 |---|---|---|
 | CLI | `axiom --help` | `index`, `reindex`, `query`, `classify`, `versions`, `families`, `eval`, `serve`, `ui`, `gc` |
 | REST API | `axiom serve --index-root <dir>` | `POST /v1/query`, `GET /v1/versions`, `GET /v1/families`, `GET /v1/chunk/{id}`, `GET /v1/health`. OpenAPI at `/docs`. Local-only by default; CORS is opt-in via `AXIOM_API_CORS_ORIGINS`. |
-| Web UI | `axiom ui --index-root <dir>` | Streamlit on `http://127.0.0.1:8501`, local-only like the API. Uses a running `axiom serve` if you pass `--api-base-url`, otherwise runs in-process. |
+| Web app | `cd web && npm install && npm run dev` | The main frontend: landing page and search console on `http://127.0.0.1:3000`, with ranked results, per-signal evidence, fusion weights, stage timings, and snippet families with diffs. Needs `axiom serve` running; see [web/README.md](web/README.md). |
+| Streamlit UI | `axiom ui --index-root <dir>` | A lighter Python-only UI on `http://127.0.0.1:8501`, local-only like the API. Uses a running `axiom serve` if you pass `--api-base-url`, otherwise runs in-process. |
 
 Full contracts: [API.md](docs/API.md).
 
@@ -254,6 +255,7 @@ configs/        profiles: default, demo, eval, fast, accurate
 scripts/        eval runner, sweeps, latency bench, demo-corpus generator
 tests/          test suite and fixture repositories (repo_v1, repo_v2)
 docs/           full design documentation, indexed below
+web/            Next.js frontend: landing page and search console
 submission/     presentation (PPTX and PDF)
 ```
 

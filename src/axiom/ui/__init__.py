@@ -36,6 +36,30 @@ UI_INSTALL_HINT = (
 #: (API.md section 2, ``AXIOM_API_BASE_URL``).
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 
+#: The web frontend's palette (web/src/app/globals.css), so the Streamlit UI and
+#: the Next.js app read as one product.
+STREAMLIT_THEME: dict[str, str] = {
+    "base": "dark",
+    "primaryColor": "#ff8b3e",
+    "backgroundColor": "#0b0907",
+    "secondaryBackgroundColor": "#15110e",
+    "textColor": "#fff6e5",
+    "linkColor": "#ff8b3e",
+    "borderColor": "#3f3630",
+    "codeBackgroundColor": "#120e0b",
+    "headingFont": "serif",
+    "codeFont": "monospace",
+    "baseRadius": "small",
+}
+
+
+def theme_args() -> list[str]:
+    """``--theme.*`` flags for ``streamlit run`` carrying :data:`STREAMLIT_THEME`."""
+    args: list[str] = []
+    for key, value in STREAMLIT_THEME.items():
+        args += [f"--theme.{key}", value]
+    return args
+
 
 class UiDependencyError(AxiomError):
     """Streamlit is not installed.
@@ -130,6 +154,7 @@ def launch(
         # Streamlit binds every interface by default; the UI is local-only (NG-08).
         "--server.address",
         "127.0.0.1",
+        *theme_args(),
     ]
     if headless:
         command += ["--server.headless", "true"]

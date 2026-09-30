@@ -1596,6 +1596,7 @@ def ui_command(
             "true",
             "--browser.gatherUsageStats",
             "false",
+            *ui_package.theme_args(),
         ]
         raise typer.Exit(subprocess.call(command, env=env))
 

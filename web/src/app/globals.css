@@ -1,0 +1,261 @@
+@import "tailwindcss";
+
+/*
+ * Axiom design system. Warm "desert at night" palette: near-black earth tones,
+ * cream surfaces, one sun-orange accent and a dawn-blue for the dense signal.
+ */
+@theme {
+  --color-void: #0b0907;
+  --color-night: #1b1613;
+  --color-midnight: #27221f;
+  --color-dusk: #3f3630;
+  --color-twilight: #15203d;
+  --color-sun: #ff8b3e;
+  --color-ember: #b25312;
+  --color-dawn: #7993e2;
+  --color-oasis: #4fb3a2;
+  --color-dust: #fbf6ec;
+  --color-sand: #fbefd6;
+  --color-desert: #ffdbad;
+  --color-bone: #fff6e5;
+  --color-stroke-1: #dfd8d3;
+  --color-stroke-2: #b1aca6;
+  --color-stroke-3: #54504e;
+
+  --font-heading: var(--font-newsreader), ui-serif, Georgia, serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-rise: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-blink: blink 1.1s steps(2, start) infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes blink {
+    to {
+      visibility: hidden;
+    }
+  }
+}
+
+/* Fluid type scale: each size interpolates between a 480px and a 1280px viewport. */
+@utility text-heading-64 {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: clamp(2.5rem, calc(2.5rem + 1.5rem * ((100vw - 30rem) / 50rem)), 4rem);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+@utility text-heading-56 {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: clamp(2.25rem, calc(2.25rem + 1.25rem * ((100vw - 30rem) / 50rem)), 3.5rem);
+  line-height: 1.06;
+  letter-spacing: -0.022em;
+}
+@utility text-heading-48 {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: clamp(1.75rem, calc(1.75rem + 1.25rem * ((100vw - 30rem) / 50rem)), 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+@utility text-heading-40 {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: clamp(1.625rem, calc(1.625rem + 0.875rem * ((100vw - 30rem) / 50rem)), 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.018em;
+}
+@utility text-heading-32 {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: clamp(1.5rem, calc(1.5rem + 0.5rem * ((100vw - 30rem) / 50rem)), 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+@utility text-heading-24 {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  font-size: clamp(1.25rem, calc(1.25rem + 0.25rem * ((100vw - 30rem) / 50rem)), 1.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+@utility text-body-20 {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: clamp(1.0625rem, calc(1.0625rem + 0.1875rem * ((100vw - 30rem) / 50rem)), 1.25rem);
+  line-height: 1.45;
+}
+@utility text-body-18 {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: clamp(1rem, calc(1rem + 0.125rem * ((100vw - 30rem) / 50rem)), 1.125rem);
+  line-height: 1.55;
+}
+@utility text-body-16 {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+@utility text-body-14 {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+@utility text-mono-s {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+}
+@utility text-mono-m {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+  @media (width >= 48rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+/*
+ * Blueprint frame: a hairline border with a small dot pinned to each corner.
+ * Put .frame-dots on a relatively positioned element; the four dots are drawn
+ * with two pseudo-elements carrying two radial gradients each.
+ */
+@utility frame-dots {
+  position: relative;
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    pointer-events: none;
+    --dot: var(--frame-dot, var(--color-stroke-3));
+    background:
+      radial-gradient(circle, var(--dot) 2.5px, transparent 3px) left top / 6px 6px no-repeat,
+      radial-gradient(circle, var(--dot) 2.5px, transparent 3px) right top / 6px 6px no-repeat;
+  }
+  &::after {
+    background:
+      radial-gradient(circle, var(--dot) 2.5px, transparent 3px) left bottom / 6px 6px no-repeat,
+      radial-gradient(circle, var(--dot) 2.5px, transparent 3px) right bottom / 6px 6px no-repeat;
+  }
+}
+
+/*
+ * Range input: a hairline track filled in sun up to the thumb (--fill), and a
+ * small cream thumb with a sun ring. Styled per engine; the pseudo-elements
+ * cannot share a rule.
+ */
+.range-sun {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+  --track: linear-gradient(90deg, var(--color-sun) var(--fill, 0%), var(--color-dusk) var(--fill, 0%));
+}
+.range-sun::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 999px;
+  background: var(--track);
+}
+.range-sun::-moz-range-track {
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-dusk);
+}
+.range-sun::-moz-range-progress {
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-sun);
+}
+.range-sun::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: var(--color-bone);
+  border: 3px solid var(--color-sun);
+  box-shadow: 0 0 0 0 rgb(255 139 62 / 0.35);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.range-sun::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-bone);
+  border: 3px solid var(--color-sun);
+  transition: box-shadow 0.2s;
+}
+.range-sun:hover::-webkit-slider-thumb,
+.range-sun:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgb(255 139 62 / 0.18);
+  transform: scale(1.08);
+}
+.range-sun:hover::-moz-range-thumb,
+.range-sun:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 6px rgb(255 139 62 / 0.18);
+}
+.range-sun:focus-visible {
+  outline: none;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--color-void);
+    color: var(--color-bone);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--color-sun);
+    color: var(--color-night);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-sun);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

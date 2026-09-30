@@ -660,6 +660,22 @@ class IndexBackend:
             )
         return resolved
 
+    def warm(self) -> None:
+        """Load the embedder and the cross-encoder before the agent's clock starts.
+
+        Both load lazily inside the first pass, and in a fresh process that takes
+        seconds. Inside the loop it spent the whole agent budget, so every first
+        CLI query stopped with ``budget_exhausted`` after one pass. Loads are
+        cached per process, so this costs nothing on a warm server.
+        """
+        if self.settings.dense_enabled:
+            for version in self.versions:
+                _ = version.dense().available
+        if self.settings.reranker_enabled:
+            from axiom.rerank.cross_encoder import load_cross_encoder
+
+            load_cross_encoder(self.settings)
+
     def close(self) -> None:
         for version in self.versions:
             version.close()
@@ -997,6 +1013,8 @@ def query(
     versions = _select_versions(resolved, version_id, all_versions)
     backend = IndexBackend(versions, resolved)
     try:
+        with ledger.measure("warm"):
+            backend.warm()
         outcome = agent_loop.run(
             text, backend, resolved, plan=forced_plan, ledger=ledger, top_k=width
         )

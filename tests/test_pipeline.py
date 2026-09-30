@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -236,6 +237,17 @@ class TestQuery:
             assert result.chunk.text.strip() in line_slice, (
                 f"line range does not contain the chunk at {location.as_ref()}"
             )
+
+    @pytest.mark.smoke
+    def test_model_loading_does_not_spend_the_agent_budget(self, indexed_v1, monkeypatch) -> None:
+        """Loading the models is not agent work: a slow first load in a fresh
+        process used to exhaust the 5 s agent budget inside pass 1."""
+        settings, _ = indexed_v1
+        tight = settings.model_copy(update={"agent_wall_clock_ms": 200})
+        monkeypatch.setattr(pipeline.IndexBackend, "warm", lambda self: time.sleep(0.4))
+        response = pipeline.query(Q2, tight)
+        assert response.stop_reason != "budget_exhausted"
+        assert response.results
 
     def test_every_result_explains_itself(self, indexed_v1) -> None:
         """FR-14: a non-empty ``match_reason`` naming the dominant signal, and
