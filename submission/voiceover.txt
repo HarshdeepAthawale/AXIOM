@@ -1,0 +1,19 @@
+Engineers rarely ask an AI to write new code. They ask where something already happens. In a voice-assistant codebase with thousands of JavaScript files, that question has no easy answer. This is Axiom: agentic code intelligence, built by Team Incognito for Samsung PRISM. <break time="1.0s" />
+
+A ten-thousand-file repository is tens of millions of tokens, and no language model can hold it. Keyword search misses meaning, embeddings miss the order of calls, and every commit makes an index go stale. So Axiom doesn't ask a model to read your code. It retrieves it. <break time="1.0s" />
+
+Every question is classified first: semantic, structural, usage, or hybrid. Then three signals run in parallel. Dense embeddings for meaning, B M 25 for exact identifiers, and a tree-sitter call graph that remembers the order functions are called in. The rankings are fused with weights chosen for the query type, rescored by a cross-encoder, and checked by a bounded agent that can rewrite the query and search again: at most twice, within five seconds. <break time="1.0s" />
+
+Three questions from the problem statement, three kinds of evidence. And every number here is measured. When fifty files change, only those fifty chunks are re-embedded. Renamed code costs nothing. Six hundred and fifty-nine tests pass on a fresh clone. <break time="0.8s" />
+
+Codebases change, so Axiom indexes every version by content. The same function across releases becomes one family, with its diff. <break time="1.2s" />
+
+Here is the console, running on a laptop CPU. Let's ask a structural question: which files call resolve utterance four, before normalize tool one? The classifier routes it to the call graph, which now carries sixty percent of the weight. Every result shows its exact file and lines, the rank each signal gave it, and why it ranked. Look at dispatch payload eight: it calls resolve utterance four at position two, before normalize tool one at position three. That order is the answer, and no embedding can see it. <break time="1.0s" />
+
+A usage question is different: an exact string. Now B M 25 leads the fusion, and the files that contain that deeplink come straight to the top. <break time="1.0s" />
+
+Open any result for the full source, its calls in the order they happen, and exactly where it came from: commit and content hash. <break time="1.0s" />
+
+And across versions, the families view shows how each function evolved: one entry instead of three near-duplicates. <break time="1.0s" />
+
+Axiom. Retrieval you can verify, on hardware you already have. It's open source, so try it on GitHub. Thank you.
