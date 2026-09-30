@@ -148,7 +148,7 @@ export function HeroPreview() {
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const start = setTimeout(() => setAnimate(true), HOLD_MS);
+    const start = setTimeout(() => setAnimate(true), 0);
     return () => clearTimeout(start);
   }, []);
 

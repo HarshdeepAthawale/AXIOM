@@ -118,7 +118,7 @@ MiniLM embedder on a laptop CPU (measured 2026-09-29):
 |---|---|
 | `reindex` v1.0.0 → v2.0.0, 50 files changed | **50** chunks re-embedded, 51 reused, **5.0 s** (budget 45 s) |
 | `reindex` v2.0.0 → v3.0.0, content already in the store | **0** embedding calls, all 101 reused, **0.49 s** |
-| Evolutionary retrieval (Bonus) | 112 snippet families over 3 versions: 101 span several versions, 41 carry real diffs |
+| Evolutionary retrieval (Bonus) | 109 snippet families over 3 versions: 101 span several versions, 44 carry real diffs |
 
 ## Quickstart
 

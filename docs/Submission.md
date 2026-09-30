@@ -34,7 +34,7 @@ Twelve slides. The jury weighting each slide serves is in brackets.
 | 7 | Results — what we measured | The ablation table from §3 below, plus the honest headline: the binding constraint is **Recall@100**, not NDCG. | Prototype 30% + Depth 25% |
 | 8 | Results — what we did not reach | The ≥20.0 target and why: a 22M-parameter fallback embedder, because the 0.6B primary has no ONNX export yet. State the gap, own it, show the diagnosis. A jury trusts a team that reports its own miss. | Depth 25% |
 | 9 | Version-aware retrieval (P1) | A 50-file diff re-embeds only its **50 changed chunks** and reuses the other 51, in 5.0 s against a 45 s budget. Content already seen (a rename, a revert) costs **0 embedding calls**. Content addressing is why. | Prototype 30% |
-| 10 | Evolutionary retrieval (Bonus) | 112 snippet families over 3 versions, 41 carrying real diffs. Dedupe threshold 0.95 **measured**, not guessed: minimum-error over 45,753 pairs. | Innovation 20% |
+| 10 | Evolutionary retrieval (Bonus) | 109 snippet families over 3 versions, 44 carrying real diffs. Dedupe threshold 0.95 **measured**, not guessed: minimum-error over 45,753 pairs. | Innovation 20% |
 | 11 | It runs on the evaluator's laptop | The degradation ladder. Four rungs, every one exercised: no models, no faiss, no bm25s, no tree-sitter — still returns ranked results. This is why the demo cannot fail on an unknown machine. | Prototype 30% |
 | 12 | Engineering discipline | Locked Pydantic contract, 500+ tests, the eval harness that **refuses to mark its own run reportable** while a placeholder is active or the tree is dirty. Show that refusal on screen. | Depth 25% + Docs 10% |
 

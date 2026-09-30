@@ -224,7 +224,7 @@ function Results() {
     { value: "0.9 s", label: "Warm query on a laptop CPU, cross-encoder included" },
     { value: "50 of 101", label: "Chunks re-embedded when 50 files change" },
     { value: "0", label: "Embedding calls for renamed, moved or reverted code" },
-    { value: "112", label: "Snippet families tracked across three versions" },
+    { value: "109", label: "Snippet families tracked across three versions" },
     { value: "659", label: "Tests passing on a fresh clone" },
   ];
   return (

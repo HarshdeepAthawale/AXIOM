@@ -481,7 +481,7 @@ was not re-measured:
 | Incremental reindex v1.0.0 → v2.0.0, 50 changed files, cold blob store | **50** of 101 chunks re-embedded, 51 reused; **5.0 s** | 45 s (`NFR-02`) |
 | Reindex v2.0.0 → v3.0.0, content already in the blob store | **0** embedding calls, 101 reused; **0.49 s** | `FR-19` |
 | Cross-version storage | 201 blobs for 303 chunk-instances | — |
-| Snippet families over 3 versions | 112: 101 span several versions, 41 carry real diffs | `FR-21` |
+| Snippet families over 3 versions | 109: 101 span several versions, 44 carry real diffs | `FR-21` |
 
 An earlier revision of this table reported "295 ms, 0 embedding calls, 101 blobs reused" as the cold
 50-file reindex. That run had a warm blob store; a cold run re-embeds exactly the 50 changed chunks.
