@@ -1,0 +1,20 @@
+# Render Blueprint for the hosted Axiom API. The web frontend (web/) deploys to
+# Vercel and proxies /api/axiom/* here through AXIOM_API_URL.
+#
+# Render dashboard -> New -> Blueprint -> connect HarshdeepAthawale/AXIOM.
+services:
+  - type: web
+    name: axiom-api
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: bash scripts/render_build.sh
+    startCommand: axiom serve --profile demo --index-root .axiom-demo --host 0.0.0.0 --port $PORT
+    healthCheckPath: /v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: AXIOM_MODEL_DIR
+        value: /opt/render/project/src/data/models
+      - key: AXIOM_LLM_ENABLED
+        value: "false"
